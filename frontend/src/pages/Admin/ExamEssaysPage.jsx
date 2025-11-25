@@ -1,0 +1,629 @@
+import React, { useState, useEffect } from 'react';
+import { examEssayApi, subjectApi } from '../../api/adminApi';
+import Alert from '../../components/ui/Alert';
+import { validateExamEssayForm, validateEssayQuestionForm, prettyJSON, safeJSONParse } from '../../utils/formValidation';
+import '../../styles/admin.css';
+import '../../styles/admin.tw.css';
+
+const ExamEssaysPage = () => {
+  // State quản lý
+  const [activeTab, setActiveTab] = useState('exams'); // 'exams' hoặc 'questions'
+  const [exams, setExams] = useState([]);
+  const [subjects, setSubjects] = useState([]);
+  const [questions, setQuestions] = useState([]);
+  const [selectedExam, setSelectedExam] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [showExamModal, setShowExamModal] = useState(false);
+  const [showQuestionModal, setShowQuestionModal] = useState(false);
+  const [editingExam, setEditingExam] = useState(null);
+  const [editingQuestion, setEditingQuestion] = useState(null);
+  const [alert, setAlert] = useState({ show: false, type: 'error', message: '' });
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+
+  const [examFormData, setExamFormData] = useState({
+    exam_code: '',
+    subject_id: '',
+    duration: '',
+    total_score: '',
+    description: '',
+    is_active: true
+  });
+
+  const [questionFormData, setQuestionFormData] = useState({
+    question_number: '',
+    question_text: '',
+    max_score: '',
+    grading_criteria: '',
+    sample_answer: '',
+    estimated_time: ''
+  });
+  // UX-friendly criteria builder state
+  const [criteriaList, setCriteriaList] = useState(['']);
+  const [criteriaNotes, setCriteriaNotes] = useState('');
+
+  // Helper: pretty print grading_criteria JSON
+  const formatCriteria = () => {
+    try {
+      const obj = typeof questionFormData.grading_criteria === 'string'
+        ? JSON.parse(questionFormData.grading_criteria || '{}')
+        : (questionFormData.grading_criteria || {});
+      const pretty = JSON.stringify(obj, null, 2);
+      setQuestionFormData({ ...questionFormData, grading_criteria: pretty });
+    } catch (e) {
+      setAlert({ show: true, type: 'warning', message: 'JSON không hợp lệ. Vui lòng kiểm tra lại.' });
+    }
+  };
+
+  const applyCriteriaTemplate = () => {
+    const template = {
+      criteria: [
+        'Trình bày rõ ràng',
+        'Đúng công thức',
+        'Lập luận chặt chẽ'
+      ],
+      notes: ''
+    };
+    const pretty = JSON.stringify(template, null, 2);
+    setQuestionFormData({ ...questionFormData, grading_criteria: pretty });
+  };
+
+  useEffect(() => {
+    if (activeTab === 'exams') {
+      loadExams();
+      loadSubjects();
+    }
+  }, [activeTab, currentPage, searchTerm]);
+
+  useEffect(() => {
+    if (selectedExam) {
+      loadQuestions(selectedExam.essay_id);
+    }
+  }, [selectedExam]);
+
+  const loadExams = async () => {
+    try {
+      setLoading(true);
+      const response = await examEssayApi.getExamEssays({
+        page: currentPage,
+        limit: 10,
+        search: searchTerm
+      });
+
+      if (response.success) {
+        setExams(response.data);
+        setTotalPages((response.pagination && response.pagination.pages) || 1);
+      }
+    } catch (error) {
+      setAlert({ show: true, type: 'error', message: 'Lỗi khi tải danh sách đề thi: ' + error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadSubjects = async () => {
+    try {
+      const response = await subjectApi.getSubjects({ limit: 100 });
+      if (response.success) {
+        setSubjects(response.data);
+      }
+    } catch (error) {
+      console.error('Error loading subjects:', error);
+    }
+  };
+
+  const loadQuestions = async (essayId) => {
+    try {
+      const response = await examEssayApi.getQuestions(essayId);
+      if (response.success) {
+        setQuestions(response.data);
+      }
+    } catch (error) {
+      setAlert({ show: true, type: 'error', message: 'Lỗi khi tải câu hỏi: ' + error.message });
+    }
+  };
+
+  const handleExamSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      setLoading(true);
+      const payload = {
+        ...examFormData,
+        duration: parseInt(examFormData.duration),
+        total_score: parseFloat(examFormData.total_score),
+        subject_id: parseInt(examFormData.subject_id)
+      };
+
+      const response = editingExam
+        ? await examEssayApi.updateExamEssay(editingExam.essay_id, payload)
+        : await examEssayApi.createExamEssay(payload);
+
+      if (response.success) {
+        setAlert({ show: true, type: 'success', message: response.message });
+        loadExams();
+        handleCloseExamModal();
+      }
+    } catch (error) {
+      setAlert({ show: true, type: 'error', message: (error.response && error.response.data && error.response.data.message) || error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleQuestionSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      setLoading(true);
+      const criteriaObj = {
+        criteria: criteriaList.map(c => (c || '').trim()).filter(Boolean),
+        notes: criteriaNotes
+      };
+      const payload = {
+        ...questionFormData,
+        question_number: parseInt(questionFormData.question_number),
+        max_score: parseFloat(questionFormData.max_score),
+        grading_criteria: JSON.stringify(criteriaObj),
+        estimated_time: questionFormData.estimated_time ? parseInt(questionFormData.estimated_time) : null
+      };
+
+      const response = editingQuestion
+        ? await examEssayApi.updateQuestion(editingQuestion.question_id, payload)
+        : await examEssayApi.addQuestion(selectedExam.essay_id, payload);
+
+      if (response.success) {
+        setAlert({ show: true, type: 'success', message: response.message });
+        loadQuestions(selectedExam.essay_id);
+        handleCloseQuestionModal();
+      }
+    } catch (error) {
+      setAlert({ show: true, type: 'error', message: (error.response && error.response.data && error.response.data.message) || error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteExam = async (exam) => {
+    if (window.confirm(`Bạn có chắc muốn xóa đề thi "${exam.exam_code}"?`)) {
+      try {
+        const response = await examEssayApi.deleteExamEssay(exam.essay_id);
+        if (response.success) {
+          setAlert({ show: true, type: 'success', message: response.message });
+          loadExams();
+        }
+      } catch (error) {
+        setAlert({ show: true, type: 'error', message: (error.response && error.response.data && error.response.data.message) || error.message });
+      }
+    }
+  };
+
+  const handleDeleteQuestion = async (question) => {
+    if (window.confirm(`Bạn có chắc muốn xóa câu hỏi số ${question.question_number}?`)) {
+      try {
+        const response = await examEssayApi.deleteQuestion(question.question_id);
+        if (response.success) {
+          setAlert({ show: true, type: 'success', message: response.message });
+          loadQuestions(selectedExam.essay_id);
+        }
+      } catch (error) {
+        setAlert({ show: true, type: 'error', message: (error.response && error.response.data && error.response.data.message) || error.message });
+      }
+    }
+  };
+
+  const handleOpenExamModal = (exam = null) => {
+    if (exam) {
+      setEditingExam(exam);
+      setExamFormData({
+        exam_code: exam.exam_code,
+        subject_id: exam.subject_id,
+        duration: exam.time_limit || exam.duration,
+        total_score: exam.total_score,
+        description: exam.description || '',
+        is_active: exam.is_active
+      });
+    } else {
+      setEditingExam(null);
+      setExamFormData({
+        exam_code: '',
+        subject_id: '',
+        duration: '',
+        total_score: '',
+        description: '',
+        is_active: true
+      });
+    }
+    setShowExamModal(true);
+  };
+
+  const handleCloseExamModal = () => {
+    setShowExamModal(false);
+    setEditingExam(null);
+  };
+
+  const handleOpenQuestionModal = (question = null) => {
+    if (question) {
+      setEditingQuestion(question);
+      setQuestionFormData({
+        question_number: question.question_number,
+        question_text: question.question_text,
+        max_score: question.max_score,
+        grading_criteria: question.grading_criteria || '',
+        sample_answer: question.sample_answer || '',
+        estimated_time: question.estimated_time || ''
+      });
+      try {
+        const parsed = typeof question.grading_criteria === 'string'
+          ? JSON.parse(question.grading_criteria || '{}')
+          : (question.grading_criteria || {});
+        const arr = Array.isArray(parsed.criteria) ? parsed.criteria : [];
+        setCriteriaList(arr.length ? arr : ['']);
+        setCriteriaNotes(parsed.notes || '');
+      } catch {
+        setCriteriaList(['']);
+        setCriteriaNotes('');
+      }
+    } else {
+      setEditingQuestion(null);
+      setQuestionFormData({
+        question_number: '',
+        question_text: '',
+        max_score: '',
+        grading_criteria: '',
+        sample_answer: '',
+        estimated_time: ''
+      });
+      setCriteriaList(['']);
+      setCriteriaNotes('');
+    }
+    setShowQuestionModal(true);
+  };
+
+  const handleCloseQuestionModal = () => {
+    setShowQuestionModal(false);
+    setEditingQuestion(null);
+  };
+
+  const handleViewQuestions = (exam) => {
+    setSelectedExam(exam);
+    setActiveTab('questions');
+  };
+
+  return (
+    <div className="container">
+      {alert.show && (
+        <Alert
+          type={alert.type}
+          message={alert.message}
+          onClose={() => setAlert({ show: false, type: 'error', message: '' })}
+        />
+      )}
+
+      <div className="page-header">
+        <h1>📝 Quản lý Đề thi Tự luận</h1>
+      </div>
+
+      {/* Tabs */}
+      <div className="tabs">
+        <button
+          className={`tab-button ${activeTab === 'exams' ? 'active' : ''}`}
+          onClick={() => setActiveTab('exams')}
+        >
+          Đề thi
+        </button>
+        <button
+          className={`tab-button ${activeTab === 'questions' ? 'active' : ''}`}
+          onClick={() => setActiveTab('questions')}
+          disabled={!selectedExam}
+        >
+          Câu hỏi {selectedExam && `(${selectedExam.exam_code})`}
+        </button>
+      </div>
+
+      {/* Tab Đề thi */}
+      {activeTab === 'exams' && (
+        <>
+          <div className="toolbar">
+            <button className="btn btn-primary" onClick={() => handleOpenExamModal()}>
+              + Thêm Đề thi
+            </button>
+            <div className="search-box">
+              <input
+                type="text"
+                placeholder="Tìm kiếm theo mã đề, môn..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="loading">Đang tải...</div>
+          ) : (
+            <>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Mã đề</th>
+                    <th>Môn thi</th>
+                    <th>Thời gian (phút)</th>
+                    <th>Tổng điểm</th>
+                    {/* DB không có cột exam_date */}
+                    <th>Trạng thái</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {exams.map((exam) => (
+                    <tr key={exam.essay_id}>
+                      <td><strong>{exam.exam_code}</strong></td>
+                      <td>{exam.subject_name}</td>
+                      <td>{exam.time_limit}</td>
+                      <td>{exam.total_score}</td>
+                      <td>
+                        <span className={`badge ${exam.is_active ? 'badge-success' : 'badge-danger'}`}>
+                          {exam.is_active ? 'Kích hoạt' : 'Vô hiệu'}
+                        </span>
+                      </td>
+                      <td>
+                        <button className="btn-icon" onClick={() => handleViewQuestions(exam)} title="Xem câu hỏi">
+                          📋
+                        </button>
+                        <button className="btn-icon" onClick={() => handleOpenExamModal(exam)} title="Sửa">
+                          ✏️
+                        </button>
+                        <button className="btn-icon" onClick={() => handleDeleteExam(exam)} title="Xóa">
+                          🗑️
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {totalPages > 1 && (
+                <div className="pagination">
+                  {[...Array(totalPages)].map((_, i) => (
+                    <button
+                      key={i + 1}
+                      className={`page-btn ${currentPage === i + 1 ? 'active' : ''}`}
+                      onClick={() => setCurrentPage(i + 1)}
+                    >
+                      {i + 1}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+
+      {/* Tab Câu hỏi */}
+      {activeTab === 'questions' && selectedExam && (
+        <>
+          <div className="toolbar">
+            <button className="btn btn-secondary" onClick={() => setActiveTab('exams')}>
+              ← Quay lại
+            </button>
+            <button className="btn btn-primary" onClick={() => handleOpenQuestionModal()}>
+              + Thêm Câu hỏi
+            </button>
+          </div>
+
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th style={{width: '80px'}}>Câu số</th>
+                <th>Nội dung câu hỏi</th>
+                <th style={{width: '100px'}}>Điểm tối đa</th>
+                <th style={{width: '150px'}}>Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              {questions.map((question) => (
+                <tr key={question.question_id}>
+                  <td><strong>Câu {question.question_number}</strong></td>
+                  <td className="text-left">{question.question_text.substring(0, 100)}...</td>
+                  <td>{question.max_score}</td>
+                  <td>
+                    <button className="btn-icon" onClick={() => handleOpenQuestionModal(question)} title="Sửa">
+                      ✏️
+                    </button>
+                    <button className="btn-icon" onClick={() => handleDeleteQuestion(question)} title="Xóa">
+                      🗑️
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      {/* Modal Đề thi */}
+      {showExamModal && (
+        <div className="modal-overlay" onClick={handleCloseExamModal}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>{editingExam ? 'Sửa Đề thi' : 'Thêm Đề thi mới'}</h2>
+              <button className="close-btn" onClick={handleCloseExamModal}>×</button>
+            </div>
+            <form onSubmit={handleExamSubmit}>
+              <div className="form-grid">
+                <div className="form-group">
+                  <label>Mã đề thi *</label>
+                  <input
+                    type="text"
+                    value={examFormData.exam_code}
+                    onChange={(e) => setExamFormData({...examFormData, exam_code: e.target.value})}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Môn thi *</label>
+                  <select
+                    value={examFormData.subject_id}
+                    onChange={(e) => setExamFormData({...examFormData, subject_id: e.target.value})}
+                    required
+                  >
+                    <option value="">-- Chọn môn --</option>
+                    {subjects.map(s => (
+                      <option key={s.subject_id} value={s.subject_id}>{s.subject_name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Thời gian (phút) *</label>
+                  <input
+                    type="number"
+                    value={examFormData.duration}
+                    onChange={(e) => setExamFormData({...examFormData, duration: e.target.value})}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Tổng điểm *</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    value={examFormData.total_score}
+                    onChange={(e) => setExamFormData({...examFormData, total_score: e.target.value})}
+                    required
+                  />
+                </div>
+                
+                <div className="form-group">
+                  <label>Trạng thái</label>
+                  <select
+                    value={examFormData.is_active}
+                    onChange={(e) => setExamFormData({...examFormData, is_active: e.target.value === 'true'})}
+                  >
+                    <option value="true">Kích hoạt</option>
+                    <option value="false">Vô hiệu</option>
+                  </select>
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Mô tả</label>
+                <textarea
+                  value={examFormData.description}
+                  onChange={(e) => setExamFormData({...examFormData, description: e.target.value})}
+                  rows="3"
+                />
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={handleCloseExamModal}>
+                  Hủy
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={loading}>
+                  {loading ? 'Đang xử lý...' : (editingExam ? 'Cập nhật' : 'Thêm mới')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Câu hỏi */}
+      {showQuestionModal && (
+        <div className="modal-overlay" onClick={handleCloseQuestionModal}>
+          <div className="modal-content large" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>{editingQuestion ? 'Sửa Câu hỏi' : 'Thêm Câu hỏi mới'}</h2>
+              <button className="close-btn" onClick={handleCloseQuestionModal}>×</button>
+            </div>
+            <form onSubmit={handleQuestionSubmit}>
+              <div className="form-grid">
+                <div className="form-group">
+                  <label>Số thứ tự *</label>
+                  <input
+                    type="number"
+                    value={questionFormData.question_number}
+                    onChange={(e) => setQuestionFormData({...questionFormData, question_number: e.target.value})}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Điểm tối đa *</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    value={questionFormData.max_score}
+                    onChange={(e) => setQuestionFormData({...questionFormData, max_score: e.target.value})}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Nội dung câu hỏi *</label>
+                <textarea
+                  value={questionFormData.question_text}
+                  onChange={(e) => setQuestionFormData({...questionFormData, question_text: e.target.value})}
+                  rows="4"
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label>Tiêu chí chấm điểm</label>
+                <div className="mb-2">
+                  {criteriaList.map((c, idx) => (
+                    <div key={idx} className="flex items-center gap-2 mb-2">
+                      <input
+                        type="text"
+                        className="admin-form-input"
+                        placeholder={`Tiêu chí #${idx+1}`}
+                        value={c}
+                        onChange={(e) => {
+                          const next = [...criteriaList];
+                          next[idx] = e.target.value;
+                          setCriteriaList(next);
+                        }}
+                      />
+                      <button type="button" className="btn btn-secondary" onClick={() => setCriteriaList(criteriaList.filter((_,i)=>i!==idx))}>Xóa</button>
+                    </div>
+                  ))}
+                  <button type="button" className="btn btn-primary" onClick={() => setCriteriaList([...criteriaList, ''])}>+ Thêm tiêu chí</button>
+                </div>
+                <label>Ghi chú (tùy chọn)</label>
+                <textarea
+                  className="admin-form-textarea"
+                  value={criteriaNotes}
+                  onChange={(e)=>setCriteriaNotes(e.target.value)}
+                  rows="3"
+                  placeholder="Ví dụ: yêu cầu thí sinh nêu rõ các bước tính..."
+                />
+              </div>
+              <div className="form-group">
+                <label>Gợi ý đáp án (sample_answer)</label>
+                <textarea
+                  value={questionFormData.sample_answer}
+                  onChange={(e) => setQuestionFormData({...questionFormData, sample_answer: e.target.value})}
+                  rows="3"
+                />
+              </div>
+              <div className="form-group">
+                <label>Thời gian dự kiến (phút)</label>
+                <input
+                  type="number"
+                  value={questionFormData.estimated_time}
+                  onChange={(e) => setQuestionFormData({...questionFormData, estimated_time: e.target.value})}
+                />
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={handleCloseQuestionModal}>
+                  Hủy
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={loading}>
+                  {loading ? 'Đang xử lý...' : (editingQuestion ? 'Cập nhật' : 'Thêm mới')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ExamEssaysPage;

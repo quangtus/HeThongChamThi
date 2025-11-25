@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Tailwind component abstractions for Admin pages */
+
+/* Headers */
+.tw-admin-header { @apply flex justify-between items-center mb-8 p-6 rounded-xl shadow-lg bg-gradient-to-br from-indigo-400 to-purple-600; }
+.tw-admin-title { @apply text-white text-3xl font-bold; }
+.tw-admin-subtitle { @apply text-white/80 text-sm mt-2; }
+.tw-admin-add-btn { @apply bg-gradient-to-tr from-sky-400 to-cyan-400 text-white px-5 py-3 rounded-lg font-semibold shadow-lg transition-transform hover:scale-105; }
+
+/* Search */
+.tw-admin-search { @apply mb-6; }
+.tw-admin-search-input { @apply w-full max-w-md px-4 py-3 border-2 border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white; }
+
+/* Table */
+.tw-admin-table-wrap { @apply bg-white rounded-xl shadow border border-slate-200 overflow-hidden; }
+.tw-admin-table { @apply w-full text-sm; }
+.tw-admin-thead { @apply bg-gradient-to-b from-slate-100 to-slate-200; }
+.tw-admin-th { @apply px-3 py-4 text-left font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-slate-200 text-xs; }
+.tw-admin-td { @apply px-3 py-4 text-slate-700 border-b border-slate-100; }
+.tw-admin-row { @apply transition hover:bg-slate-50; }
+
+/* Status */
+.tw-badge { @apply inline-block px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide; }
+.tw-badge-active { @apply bg-emerald-500 text-white shadow; }
+.tw-badge-inactive { @apply bg-rose-500 text-white shadow; }
+
+/* Actions */
+.tw-actions { @apply flex gap-2 flex-wrap; }
+.tw-btn { @apply px-4 py-2 rounded-md text-xs font-semibold uppercase tracking-wide transition; }
+.tw-btn-edit { @apply bg-amber-500 text-white hover:brightness-110; }
+.tw-btn-delete { @apply bg-rose-500 text-white hover:brightness-110; }
+.tw-btn-toggle { @apply bg-violet-600 text-white hover:brightness-110; }
+
+/* Modal */
+.tw-modal-overlay { @apply fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[1000]; }
+.tw-modal { @apply bg-white rounded-xl w-[90%] max-w-xl max-h-[90vh] overflow-y-auto shadow-2xl; }
+.tw-modal-header { @apply p-6 border-b border-slate-200 mb-4 flex justify-between items-center; }
+.tw-modal-title { @apply text-lg font-bold text-slate-800; }
+.tw-close-btn { @apply text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-md p-2 transition; }
+.tw-modal-body { @apply px-6 pb-6; }
+.tw-modal-footer { @apply flex justify-end gap-3 p-6 border-t border-slate-200 bg-slate-50 rounded-b-xl; }
+.tw-btn-primary { @apply bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-4 py-2 rounded-md font-semibold shadow hover:brightness-110; }
+.tw-btn-secondary { @apply bg-slate-600 text-white px-4 py-2 rounded-md font-semibold hover:bg-slate-700; }
+
+/* Form */
+.tw-form { @apply grid gap-5; }
+.tw-form-grid { @apply grid grid-cols-1 md:grid-cols-2 gap-5; }
+.tw-form-group { @apply flex flex-col gap-2; }
+.tw-label { @apply font-semibold text-slate-700 text-sm; }
+.tw-input, .tw-select, .tw-textarea { @apply px-4 py-2.5 border-2 border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500; }
+.tw-textarea { @apply min-h-20; }
+

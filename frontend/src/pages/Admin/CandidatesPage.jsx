@@ -1,0 +1,918 @@
+import React, { useState, useEffect } from 'react';
+import { candidateApi, userApi, subjectApi } from '../../api/adminApi';
+import registrationApi from '../../api/registrationApi';
+import Alert from '../../components/ui/Alert';
+import '../../styles/admin.css';
+
+const CandidatesPage = () => {
+  const [candidates, setCandidates] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [registrations, setRegistrations] = useState([]);
+  const [subjects, setSubjects] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [showRegistrationModal, setShowRegistrationModal] = useState(false);
+  const [editingCandidate, setEditingCandidate] = useState(null);
+  const [editingRegistration, setEditingRegistration] = useState(null);
+  const [activeTab, setActiveTab] = useState('candidates'); // 'candidates' hoặc 'registrations'
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [alert, setAlert] = useState({ show: false, type: 'error', message: '' });
+  const [formData, setFormData] = useState({
+    user_id: '',
+    candidate_code: '',
+    date_of_birth: '',
+    identity_card: '',
+    address: '',
+    is_active: true
+  });
+
+  // State để lưu thông tin user được chọn
+  const [selectedUser, setSelectedUser] = useState(null);
+
+  const [registrationFormData, setRegistrationFormData] = useState({
+    candidate_id: '',
+    subject_id: '',
+    exam_type: 'BOTH',
+    exam_session: '',
+    exam_room: '',
+    seat_number: '',
+    notes: ''
+  });
+
+  // Load candidates and users when component mounts
+  useEffect(() => {
+    if (activeTab === 'candidates') {
+      loadCandidates();
+      loadUsers();
+    } else if (activeTab === 'registrations') {
+      loadRegistrations();
+      loadSubjects();
+      loadCandidates(); // Load candidates for registration form
+    }
+  }, [currentPage, searchTerm, activeTab]);
+
+  const loadCandidates = async () => {
+    try {
+      setLoading(true);
+      const response = await candidateApi.getCandidates({
+        page: currentPage,
+        limit: 10,
+        search: searchTerm
+      });
+      
+      if (response.success) {
+        setCandidates(response.data);
+        setTotalPages(response.pagination?.pages || 1);
+      } else {
+        setAlert({ show: true, type: 'error', message: 'Lỗi khi tải danh sách thí sinh: ' + response.message });
+      }
+    } catch (error) {
+      console.error('Lỗi khi tải danh sách thí sinh:', error);
+      setAlert({ show: true, type: 'error', message: `Lỗi khi tải danh sách thí sinh: ${error.response?.data?.message || error.message}` });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadUsers = async () => {
+    try {
+      const response = await userApi.getUsers();
+      
+      if (response.success) {
+        setUsers(response.data);
+      } else {
+        console.error('Lỗi khi tải danh sách users:', response.message);
+      }
+    } catch (error) {
+      console.error('Lỗi khi tải danh sách users:', error);
+    }
+  };
+
+  const loadRegistrations = async () => {
+    try {
+      setLoading(true);
+      const response = await registrationApi.getRegistrations({
+        limit: 50
+      });
+      
+      if (response.data.success) {
+        setRegistrations(response.data.data);
+      } else {
+        setAlert({ show: true, type: 'error', message: 'Lỗi khi tải danh sách đăng ký thi: ' + response.data.message });
+      }
+    } catch (error) {
+      console.error('Lỗi khi tải danh sách đăng ký thi:', error);
+      setAlert({ show: true, type: 'error', message: `Lỗi khi tải danh sách đăng ký thi: ${error.response?.data?.message || error.message}` });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadSubjects = async () => {
+    try {
+      const res = await subjectApi.getSubjects({ is_active: true, limit: 100 });
+      if (res.success) {
+        setSubjects(res.data || []);
+      } else {
+        console.error('Lỗi khi tải danh sách môn thi:', res.message);
+      }
+    } catch (error) {
+      console.error('Lỗi khi tải danh sách môn thi:', error);
+    }
+  };
+
+  const handleInputChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    
+    if (name === 'user_id') {
+      // Khi chọn user, tự động lấy thông tin user đó
+      const user = users.find(u => u.user_id === parseInt(value));
+      setSelectedUser(user);
+      setFormData({
+        ...formData,
+        [name]: value
+      });
+    } else {
+      setFormData({
+        ...formData,
+        [name]: type === 'checkbox' ? checked : value
+      });
+    }
+  };
+
+  const handleRegistrationInputChange = (e) => {
+    const { name, value } = e.target;
+    setRegistrationFormData({
+      ...registrationFormData,
+      [name]: value
+    });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      // sanitize payload to satisfy backend validations
+      const payload = {
+        ...formData,
+        candidate_code: (formData.candidate_code || '').toUpperCase() || undefined,
+        identity_card: formData.identity_card || undefined,
+        phone: formData.phone || undefined,
+        email: formData.email || undefined,
+        address: formData.address || undefined,
+      };
+
+      let response;
+      if (editingCandidate) {
+        response = await candidateApi.updateCandidate(editingCandidate.candidate_id, payload);
+      } else {
+        response = await candidateApi.createCandidate(payload);
+      }
+      
+      if (response.success) {
+        setAlert({ show: true, type: 'success', message: editingCandidate ? 'Cập nhật thí sinh thành công!' : 'Tạo thí sinh thành công!' });
+        setShowModal(false);
+        setEditingCandidate(null);
+        resetForm();
+        loadCandidates();
+      } else {
+        const detail = response.errors?.[0]?.msg || response.message;
+        setAlert({ show: true, type: 'error', message: 'Lỗi: ' + detail });
+      }
+    } catch (error) {
+      console.error('Lỗi khi lưu thí sinh:', error);
+      const data = error.response?.data;
+      const detail = data?.errors?.[0]?.msg || data?.message || error.message;
+      setAlert({ show: true, type: 'error', message: `Lỗi: ${detail}` });
+    }
+  };
+
+  const handleEdit = (candidate) => {
+    setEditingCandidate(candidate);
+    // Tìm user tương ứng với candidate
+    const user = users.find(u => u.user_id === candidate.user_id);
+    setSelectedUser(user);
+    setFormData({
+      user_id: candidate.user_id,
+      candidate_code: candidate.candidate_code,
+      date_of_birth: candidate.date_of_birth,
+      identity_card: candidate.identity_card || '',
+      address: candidate.address || '',
+      is_active: candidate.is_active
+    });
+    setShowModal(true);
+  };
+
+  const handleDelete = async (candidate) => {
+    if (window.confirm(`Bạn có chắc chắn muốn xóa thí sinh ${candidate.full_name}?`)) {
+      try {
+        const response = await candidateApi.deleteCandidate(candidate.candidate_id);
+        if (response.success) {
+          setAlert({ show: true, type: 'success', message: 'Xóa thí sinh thành công!' });
+          loadCandidates();
+        } else {
+          setAlert({ show: true, type: 'error', message: 'Lỗi: ' + response.message });
+        }
+      } catch (error) {
+        console.error('Lỗi khi xóa thí sinh:', error);
+        setAlert({ show: true, type: 'error', message: `Lỗi: ${error.response?.data?.message || error.message}` });
+      }
+    }
+  };
+
+  const handleToggleStatus = async (candidate) => {
+    try {
+      const response = await candidateApi.toggleCandidateStatus(candidate.candidate_id, !candidate.is_active);
+      if (response.success) {
+        setAlert({ show: true, type: 'success', message: `Thí sinh đã được ${!candidate.is_active ? 'kích hoạt' : 'vô hiệu hóa'}!` });
+        loadCandidates();
+      } else {
+        setAlert({ show: true, type: 'error', message: 'Lỗi: ' + response.message });
+      }
+    } catch (error) {
+      console.error('Lỗi khi thay đổi trạng thái thí sinh:', error);
+      setAlert({ show: true, type: 'error', message: `Lỗi: ${error.response?.data?.message || error.message}` });
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      user_id: '',
+      candidate_code: '',
+      date_of_birth: '',
+      identity_card: '',
+      address: '',
+      is_active: true
+    });
+    setSelectedUser(null);
+  };
+
+  const handleAddNew = () => {
+    setEditingCandidate(null);
+    resetForm();
+    setShowModal(true);
+  };
+
+  const handleSearch = (e) => {
+    setSearchTerm(e.target.value);
+    setCurrentPage(1);
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return '';
+    return new Date(dateString).toLocaleDateString('vi-VN');
+  };
+
+  const getStatusBadge = (status) => {
+    const statusMap = {
+      'PENDING': { text: 'Chờ duyệt', class: 'status-pending' },
+      'APPROVED': { text: 'Đã duyệt', class: 'status-approved' },
+      'REJECTED': { text: 'Từ chối', class: 'status-rejected' },
+      'CANCELLED': { text: 'Hủy bỏ', class: 'status-cancelled' }
+    };
+    const statusInfo = statusMap[status] || { text: status, class: 'status-default' };
+    return <span className={`status-badge ${statusInfo.class}`}>{statusInfo.text}</span>;
+  };
+
+  const getExamTypeText = (examType) => {
+    const typeMap = {
+      'ESSAY': 'Tự luận',
+      'MCQ': 'Trắc nghiệm',
+      'BOTH': 'Cả hai'
+    };
+    return typeMap[examType] || examType;
+  };
+
+  const handleRegistrationSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      let response;
+      if (editingRegistration) {
+        response = await registrationApi.updateRegistration(editingRegistration.registration_id, registrationFormData);
+      } else {
+        response = await registrationApi.createRegistration(registrationFormData);
+      }
+      
+      if (response.data.success) {
+        setAlert({ show: true, type: 'success', message: editingRegistration ? 'Cập nhật đăng ký thi thành công!' : 'Tạo đăng ký thi thành công!' });
+        setShowRegistrationModal(false);
+        setEditingRegistration(null);
+        resetRegistrationForm();
+        loadRegistrations();
+      } else {
+        setAlert({ show: true, type: 'error', message: 'Lỗi: ' + response.data.message });
+      }
+    } catch (error) {
+      console.error('Lỗi khi lưu đăng ký thi:', error);
+      setAlert({ show: true, type: 'error', message: `Lỗi: ${error.response?.data?.message || error.message}` });
+    }
+  };
+
+  const handleRegistrationEdit = (registration) => {
+    setEditingRegistration(registration);
+    setRegistrationFormData({
+      candidate_id: registration.candidate_id,
+      subject_id: registration.subject_id,
+      exam_type: registration.exam_type,
+      exam_session: registration.exam_session || '',
+      exam_room: registration.exam_room || '',
+      seat_number: registration.seat_number || '',
+      notes: registration.notes || ''
+    });
+    setShowRegistrationModal(true);
+  };
+
+  const handleRegistrationStatusUpdate = async (registration, newStatus) => {
+    try {
+      const response = await registrationApi.updateRegistrationStatus(registration.registration_id, {
+        status: newStatus
+      });
+      
+      if (response.data.success) {
+        setAlert({ show: true, type: 'success', message: 'Cập nhật trạng thái đăng ký thi thành công!' });
+        loadRegistrations();
+      } else {
+        setAlert({ show: true, type: 'error', message: 'Lỗi: ' + response.data.message });
+      }
+    } catch (error) {
+      console.error('Lỗi khi cập nhật trạng thái đăng ký thi:', error);
+      setAlert({ show: true, type: 'error', message: `Lỗi: ${error.response?.data?.message || error.message}` });
+    }
+  };
+
+  const handleRegistrationDelete = async (registration) => {
+    if (window.confirm(`Bạn có chắc chắn muốn xóa đăng ký thi này?`)) {
+      try {
+        const response = await registrationApi.deleteRegistration(registration.registration_id);
+        if (response.data.success) {
+          setAlert({ show: true, type: 'success', message: 'Xóa đăng ký thi thành công!' });
+          loadRegistrations();
+        } else {
+          setAlert({ show: true, type: 'error', message: 'Lỗi: ' + response.data.message });
+        }
+      } catch (error) {
+        console.error('Lỗi khi xóa đăng ký thi:', error);
+        setAlert({ show: true, type: 'error', message: `Lỗi: ${error.response?.data?.message || error.message}` });
+      }
+    }
+  };
+
+  const resetRegistrationForm = () => {
+    setRegistrationFormData({
+      candidate_id: '',
+      subject_id: '',
+      exam_type: 'BOTH',
+      exam_session: '',
+      exam_room: '',
+      seat_number: '',
+      notes: ''
+    });
+  };
+
+  const handleAddNewRegistration = () => {
+    setEditingRegistration(null);
+    resetRegistrationForm();
+    setShowRegistrationModal(true);
+  };
+
+  return (
+    <div className="admin-container">
+      <Alert 
+        type={alert.type}
+        message={alert.message}
+        show={alert.show}
+        position="fixed"
+        autoClose={true}
+        duration={4000}
+        onClose={() => setAlert({ show: false, type: 'error', message: '' })}
+      />
+      
+      <div className="admin-header">
+        <h1 className="admin-title">Quản lý thí sinh</h1>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            onClick={() => setActiveTab('candidates')}
+            className={`admin-tab-btn ${activeTab === 'candidates' ? 'active' : ''}`}
+          >
+            Danh sách thí sinh
+          </button>
+          <button
+            onClick={() => setActiveTab('registrations')}
+            className={`admin-tab-btn ${activeTab === 'registrations' ? 'active' : ''}`}
+          >
+            Đăng ký thi
+          </button>
+        </div>
+        <button
+          onClick={activeTab === 'candidates' ? handleAddNew : handleAddNewRegistration}
+          className="admin-add-btn"
+        >
+          + {activeTab === 'candidates' ? 'Thêm thí sinh' : 'Thêm đăng ký thi'}
+        </button>
+      </div>
+
+      {/* Search bar */}
+      <div className="admin-search">
+        <input
+          type="text"
+          placeholder="Tìm kiếm thí sinh..."
+          value={searchTerm}
+          onChange={handleSearch}
+          className="admin-search-input"
+        />
+        <div className="mt-4" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <input type="file" id="candidateImport" accept=".xlsx,.xls" style={{ display: 'none' }}
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              try {
+                const res = await candidateApi.importCandidates(file);
+                setAlert({ show: true, type: 'success', message: res.message || 'Import thành công' });
+                loadCandidates();
+              } catch (error) {
+                const data = error.response?.data;
+                const detail = data?.errors?.[0]?.msg || data?.message || error.message;
+                setAlert({ show: true, type: 'error', message: 'Import lỗi: ' + detail });
+              } finally {
+                e.target.value = '';
+              }
+            }} />
+          <button className="admin-btn admin-btn-submit" onClick={() => document.getElementById('candidateImport').click()}>Import Excel</button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="admin-loading">
+          <div className="admin-spinner"></div>
+          Đang tải...
+        </div>
+      ) : (
+        <>
+          {activeTab === 'candidates' ? (
+            <div className="admin-table-container">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Mã thí sinh</th>
+                    <th>Họ tên</th>
+                    <th>Ngày sinh</th>
+                    <th>CMND/CCCD</th>
+                    <th>Email</th>
+                    <th>Trạng thái</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {candidates.map((candidate) => (
+                    <tr key={candidate.candidate_id}>
+                      <td><span className="admin-code">{candidate.candidate_id}</span></td>
+                      <td><span className="admin-code">{candidate.candidate_code}</span></td>
+                      <td>{candidate.full_name}</td>
+                      <td>{formatDate(candidate.date_of_birth)}</td>
+                      <td>{candidate.identity_card || '-'}</td>
+                      <td>{candidate.email || '-'}</td>
+                      <td>
+                        <span className={`status-badge ${candidate.is_active ? 'status-active' : 'status-inactive'}`}>
+                          {candidate.is_active ? 'Hoạt động' : 'Bị khóa'}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="admin-actions">
+                          <button 
+                            onClick={() => handleEdit(candidate)}
+                            className="admin-btn admin-btn-edit"
+                          >
+                            Sửa
+                          </button>
+                          <button 
+                            onClick={() => handleToggleStatus(candidate)}
+                            className="admin-btn admin-btn-toggle"
+                          >
+                            {candidate.is_active ? 'Khóa' : 'Mở'}
+                          </button>
+                          <button 
+                            onClick={() => handleDelete(candidate)}
+                            className="admin-btn admin-btn-delete"
+                          >
+                            Xóa
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="admin-table-container">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Thí sinh</th>
+                    <th>Môn thi</th>
+                    <th>Loại thi</th>
+                    <th>Trạng thái</th>
+                    <th>Ca thi</th>
+                    <th>Phòng thi</th>
+                    <th>Số bàn</th>
+                    <th>Ngày đăng ký</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {registrations.map((registration) => (
+                    <tr key={registration.registration_id}>
+                      <td><span className="admin-code">{registration.registration_id}</span></td>
+                      <td>
+                        <div>
+                          <div><strong>{registration.candidate_name}</strong></div>
+                          <div style={{ fontSize: '12px', color: '#666' }}>{registration.candidate_code}</div>
+                        </div>
+                      </td>
+                      <td>
+                        <div>
+                          <div><strong>{registration.subject_name}</strong></div>
+                          <div style={{ fontSize: '12px', color: '#666' }}>{registration.subject_code}</div>
+                        </div>
+                      </td>
+                      <td>{getExamTypeText(registration.exam_type)}</td>
+                      <td>{getStatusBadge(registration.status)}</td>
+                      <td>{registration.exam_session || '-'}</td>
+                      <td>{registration.exam_room || '-'}</td>
+                      <td>{registration.seat_number || '-'}</td>
+                      <td>{formatDate(registration.registration_date)}</td>
+                      <td>
+                        <div className="admin-actions">
+                          <button 
+                            onClick={() => handleRegistrationEdit(registration)}
+                            className="admin-btn admin-btn-edit"
+                          >
+                            Sửa
+                          </button>
+                          {registration.status === 'PENDING' && (
+                            <>
+                              <button 
+                                onClick={() => handleRegistrationStatusUpdate(registration, 'APPROVED')}
+                                className="admin-btn admin-btn-approve"
+                                style={{ backgroundColor: '#10b981', color: 'white' }}
+                              >
+                                Duyệt
+                              </button>
+                              <button 
+                                onClick={() => handleRegistrationStatusUpdate(registration, 'REJECTED')}
+                                className="admin-btn admin-btn-reject"
+                                style={{ backgroundColor: '#ef4444', color: 'white' }}
+                              >
+                                Từ chối
+                              </button>
+                            </>
+                          )}
+                          <button 
+                            onClick={() => handleRegistrationDelete(registration)}
+                            className="admin-btn admin-btn-delete"
+                          >
+                            Xóa
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="admin-pagination">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+                className="admin-pagination-btn"
+              >
+                Trước
+              </button>
+              <span className="admin-pagination-info">
+                Trang {currentPage} / {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages}
+                className="admin-pagination-btn"
+              >
+                Sau
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Modal */}
+      {showModal && (
+        <div className="admin-modal-overlay">
+          <div className="admin-modal">
+            <div className="admin-modal-header">
+              <h2 className="admin-modal-title">
+                {editingCandidate ? 'Sửa thông tin thí sinh' : 'Thêm thí sinh mới'}
+              </h2>
+            </div>
+            
+            {/* Alert bên trong modal */}
+            <div className="px-6 pt-4">
+              <Alert 
+                type={alert.type}
+                message={alert.message}
+                show={alert.show && showModal}
+                position="relative"
+                autoClose={false}
+                onClose={() => setAlert({ show: false, type: 'error', message: '' })}
+              />
+            </div>
+            
+            <div className="admin-modal-body">
+              <form onSubmit={handleSubmit} className="admin-form">
+                <div className="admin-form-row">
+                  <div className="admin-form-group">
+                    <label className="admin-form-label">User:</label>
+                    <select
+                      name="user_id"
+                      value={formData.user_id}
+                      onChange={handleInputChange}
+                      className="admin-form-select"
+                      required
+                    >
+                      <option value="">-- Chọn user --</option>
+                      {users.map((user) => (
+                        <option key={user.user_id} value={user.user_id}>
+                          {user.username} - {user.full_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="admin-form-group">
+                    <label className="admin-form-label">Mã thí sinh:</label>
+                    <input
+                      type="text"
+                      name="candidate_code"
+                      value={formData.candidate_code}
+                      onChange={handleInputChange}
+                      className="admin-form-input"
+                      placeholder="Để trống để tự động tạo"
+                    />
+                  </div>
+                </div>
+
+                {/* Hiển thị thông tin user được chọn */}
+                {selectedUser && (
+                  <div className="admin-form-group">
+                    <label className="admin-form-label">Thông tin User:</label>
+                    <div className="user-info-display" style={{ 
+                      background: '#f8f9fa', 
+                      padding: '10px', 
+                      borderRadius: '5px', 
+                      border: '1px solid #dee2e6',
+                      marginBottom: '15px'
+                    }}>
+                      <p><strong>Username:</strong> {selectedUser.username}</p>
+                      <p><strong>Họ tên:</strong> {selectedUser.full_name}</p>
+                      <p><strong>Email:</strong> {selectedUser.email || 'Chưa có'}</p>
+                      <p><strong>Số điện thoại:</strong> {selectedUser.phone || 'Chưa có'}</p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="admin-form-row">
+                  <div className="admin-form-group">
+                    <label className="admin-form-label">Ngày sinh:</label>
+                    <input
+                      type="date"
+                      name="date_of_birth"
+                      value={formData.date_of_birth}
+                      onChange={handleInputChange}
+                      className="admin-form-input"
+                      required
+                    />
+                  </div>
+
+                  <div className="admin-form-group">
+                    <label className="admin-form-label">CMND/CCCD:</label>
+                    <input
+                      type="text"
+                      name="identity_card"
+                      value={formData.identity_card}
+                      onChange={handleInputChange}
+                      className="admin-form-input"
+                    />
+                  </div>
+                </div>
+
+
+                <div className="admin-form-group">
+                  <label className="admin-form-label">Địa chỉ:</label>
+                  <textarea
+                    name="address"
+                    value={formData.address}
+                    onChange={handleInputChange}
+                    className="admin-form-textarea"
+                    rows="3"
+                  />
+                </div>
+
+                <div className="admin-checkbox-group">
+                  <input
+                    type="checkbox"
+                    name="is_active"
+                    checked={formData.is_active}
+                    onChange={handleInputChange}
+                    className="admin-checkbox"
+                  />
+                  <label className="admin-form-label">Kích hoạt</label>
+                </div>
+              </form>
+            </div>
+            <div className="admin-modal-footer">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowModal(false);
+                  setEditingCandidate(null);
+                  resetForm();
+                }}
+                className="admin-btn-cancel"
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                onClick={handleSubmit}
+                className="admin-btn-submit"
+              >
+                {editingCandidate ? 'Cập nhật' : 'Tạo mới'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Registration Modal */}
+      {showRegistrationModal && (
+        <div className="admin-modal-overlay">
+          <div className="admin-modal">
+            <div className="admin-modal-header">
+              <h2 className="admin-modal-title">
+                {editingRegistration ? 'Sửa đăng ký thi' : 'Thêm đăng ký thi mới'}
+              </h2>
+            </div>
+            
+            {/* Alert bên trong modal */}
+            <div className="px-6 pt-4">
+              <Alert 
+                type={alert.type}
+                message={alert.message}
+                show={alert.show && showRegistrationModal}
+                position="relative"
+                autoClose={false}
+                onClose={() => setAlert({ show: false, type: 'error', message: '' })}
+              />
+            </div>
+            
+            <div className="admin-modal-body">
+              <form onSubmit={handleRegistrationSubmit} className="admin-form">
+                <div className="admin-form-row">
+                  <div className="admin-form-group">
+                    <label className="admin-form-label">Thí sinh:</label>
+                    <select
+                      name="candidate_id"
+                      value={registrationFormData.candidate_id}
+                      onChange={handleRegistrationInputChange}
+                      className="admin-form-select"
+                      required
+                    >
+                      <option value="">-- Chọn thí sinh --</option>
+                      {candidates.map((candidate) => (
+                        <option key={candidate.candidate_id} value={candidate.candidate_id}>
+                          {candidate.candidate_code} - {candidate.full_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="admin-form-group">
+                    <label className="admin-form-label">Môn thi:</label>
+                    <select
+                      name="subject_id"
+                      value={registrationFormData.subject_id}
+                      onChange={handleRegistrationInputChange}
+                      className="admin-form-select"
+                      required
+                    >
+                      <option value="">-- Chọn môn thi --</option>
+                      {subjects.map((subject) => (
+                        <option key={subject.subject_id} value={subject.subject_id}>
+                          {subject.subject_code} - {subject.subject_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="admin-form-row">
+                  <div className="admin-form-group">
+                    <label className="admin-form-label">Loại thi:</label>
+                    <select
+                      name="exam_type"
+                      value={registrationFormData.exam_type}
+                      onChange={handleRegistrationInputChange}
+                      className="admin-form-select"
+                      required
+                    >
+                      <option value="ESSAY">Tự luận</option>
+                      <option value="MCQ">Trắc nghiệm</option>
+                      <option value="BOTH">Cả hai</option>
+                    </select>
+                  </div>
+
+                  <div className="admin-form-group">
+                    <label className="admin-form-label">Ca thi:</label>
+                    <input
+                      type="text"
+                      name="exam_session"
+                      value={registrationFormData.exam_session}
+                      onChange={handleRegistrationInputChange}
+                      className="admin-form-input"
+                      placeholder="VD: Ca 1, Ca 2"
+                    />
+                  </div>
+                </div>
+
+                <div className="admin-form-row">
+                  <div className="admin-form-group">
+                    <label className="admin-form-label">Phòng thi:</label>
+                    <input
+                      type="text"
+                      name="exam_room"
+                      value={registrationFormData.exam_room}
+                      onChange={handleRegistrationInputChange}
+                      className="admin-form-input"
+                      placeholder="VD: P101, P102"
+                    />
+                  </div>
+
+                  <div className="admin-form-group">
+                    <label className="admin-form-label">Số bàn:</label>
+                    <input
+                      type="text"
+                      name="seat_number"
+                      value={registrationFormData.seat_number}
+                      onChange={handleRegistrationInputChange}
+                      className="admin-form-input"
+                      placeholder="VD: A01, B02"
+                    />
+                  </div>
+                </div>
+
+                <div className="admin-form-group">
+                  <label className="admin-form-label">Ghi chú:</label>
+                  <textarea
+                    name="notes"
+                    value={registrationFormData.notes}
+                    onChange={handleRegistrationInputChange}
+                    className="admin-form-textarea"
+                    rows="3"
+                    placeholder="Ghi chú thêm..."
+                  />
+                </div>
+              </form>
+            </div>
+            <div className="admin-modal-footer">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRegistrationModal(false);
+                  setEditingRegistration(null);
+                  resetRegistrationForm();
+                }}
+                className="admin-btn-cancel"
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                onClick={handleRegistrationSubmit}
+                className="admin-btn-submit"
+              >
+                {editingRegistration ? 'Cập nhật' : 'Tạo mới'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default CandidatesPage;

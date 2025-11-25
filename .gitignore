@@ -1,0 +1,43 @@
+node_modules/ 
+.env 
+dist/ 
+build/ 
+*.log 
+.DS_Store 
+*.log* 
+logs/ 
+tmp/ 
+temp/ 
+
+# Env files 
+.env.local 
+.env.*.local 
+.env.development.local 
+.env.test.local 
+.env.production.local 
+backend/.env 
+frontend/.env 
+
+# Editor/OS 
+.vscode/ 
+.idea/ 
+Thumbs.db 
+
+# Frontend build caches 
+.eslintcache 
+.cache/ 
+.parcel-cache/ 
+
+# Test/coverage 
+coverage/ 
+
+# Uploads/artifacts (runtime) 
+uploads/ 
+
+# Package manager noise 
+yarn-error.log 
+npm-debug.log* 
+pnpm-debug.log* 
+
+# Keep lockfiles tracked (do NOT ignore yarn.lock) 
+!yarn.lock 
