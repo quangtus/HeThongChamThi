@@ -67,22 +67,43 @@ if not exist "%ROOT%frontend" (
 echo       [OK] Cau truc thu muc hop le
 echo.
 
-REM ========== BUOC 3: Kiem tra va tao file .env ==========
+REM ========== BUOC 3: Kiem tra file .env ==========
 echo [3/6] Kiem tra file cau hinh .env...
 
 if not exist "%ROOT%backend\.env" (
-  echo       [CANH BAO] Khong tim thay file .env trong backend!
-  
-  if exist "%ROOT%backend\.env.example" (
-    echo       [INFO] Tim thay file .env.example, dang sao chep...
-    copy "%ROOT%backend\.env.example" "%ROOT%backend\.env" >nul
-    echo       [OK] Da tao file .env tu .env.example
-  ) else (
-    echo       [LOI] Khong tim thay file .env.example!
-    echo       Vui long tao file backend\.env voi cau hinh database.
-    pause
-    exit /b 1
-  )
+  echo.
+  echo       [LOI] Khong tim thay file .env trong backend!
+  echo.
+  echo       -------------------------------------------------------
+  echo       BAN CAN TAO FILE backend\.env VOI NOI DUNG SAU:
+  echo       -------------------------------------------------------
+  echo.
+  echo       ## Database - PostgreSQL
+  echo       PGHOST=your_database_host_here
+  echo       PGPORT=5432
+  echo       PGUSER=your_database_user_here
+  echo       PGPASSWORD=your_database_password_here
+  echo       PGDATABASE=your_database_name_here
+  echo       PGSSL=true
+  echo.
+  echo       ## Backend
+  echo       PORT=5000
+  echo       NODE_ENV=development
+  echo       JWT_SECRET=your_jwt_secret_key_here
+  echo       JWT_EXPIRE=7d
+  echo.
+  echo       ## AWS S3 ^(neu dung upload file^)
+  echo       AWS_ACCESS_KEY_ID=your_aws_access_key_here
+  echo       AWS_SECRET_ACCESS_KEY=your_aws_secret_key_here
+  echo       AWS_S3_BUCKET=your_s3_bucket_name_here
+  echo.
+  echo       -------------------------------------------------------
+  echo       Xem file backend\.env.example de biet cau truc mau.
+  echo       Sau khi tao xong, chay lai start-project.bat
+  echo       -------------------------------------------------------
+  echo.
+  pause
+  exit /b 1
 ) else (
   echo       [OK] Da tim thay file .env
 )
