@@ -44,6 +44,12 @@ const ExamEssaysPage = () => {
   const [criteriaList, setCriteriaList] = useState([createEmptyCriterion()]);
   const [criteriaNotes, setCriteriaNotes] = useState('');
   const [criteriaUploading, setCriteriaUploading] = useState({});
+  const questionsTotalScore = React.useMemo(() => {
+    return questions.reduce((sum, q) => sum + (parseFloat(q.max_score) || 0), 0);
+  }, [questions]);
+  const totalScoreDifference = selectedExam
+    ? Number(selectedExam.total_score || 0) - questionsTotalScore
+    : 0;
 
   useEffect(() => {
     if (activeTab === 'exams') {
@@ -454,6 +460,16 @@ const ExamEssaysPage = () => {
               + Thêm Câu hỏi
             </button>
           </div>
+          {Math.abs(totalScoreDifference) > 0.001 && (
+            <div className="admin-alert-warning">
+              <strong>Cảnh báo:</strong> Tổng điểm các câu hỏi hiện tại là{' '}
+              <span style={{ fontWeight: 700 }}>{questionsTotalScore}</span> trong khi tổng điểm đề là{' '}
+              <span style={{ fontWeight: 700 }}>{selectedExam.total_score}</span>.{' '}
+              {totalScoreDifference > 0
+                ? 'Vui lòng thêm điểm cho câu hỏi để đạt đúng tổng.'
+                : 'Vui lòng điều chỉnh điểm từng câu để không vượt quá tổng điểm đề.'}
+            </div>
+          )}
 
           <table className="data-table">
             <thead>

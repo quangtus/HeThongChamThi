@@ -15,7 +15,7 @@ function mapSubject(row) {
 
 // Lấy danh sách tất cả môn thi
 async function findAll(options = {}) {
-    const { is_active, search } = options;
+    const { is_active, search, limit = 10, skip = 0 } = options;
     const where = [];
     const params = {};
 
@@ -35,7 +35,10 @@ async function findAll(options = {}) {
     FROM subjects
     ${whereSql}
     ORDER BY subject_code
+    LIMIT :limit OFFSET :offset
   `;
+    params.limit = Number(limit);
+    params.offset = Number(skip);
 
     const rows = await query(sql, params);
     return rows.map(mapSubject);
@@ -101,13 +104,17 @@ async function deleteById(id) {
 
 // Đếm số lượng môn thi
 async function count(options = {}) {
-    const { is_active } = options;
+    const { is_active, search } = options;
     const where = [];
     const params = {};
 
     if (is_active !== undefined) {
         where.push('is_active = :is_active');
         params.is_active = is_active;
+    }
+    if (search) {
+        where.push('(subject_code ILIKE :kw OR subject_name ILIKE :kw OR description ILIKE :kw)');
+        params.kw = `%${search}%`;
     }
 
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';

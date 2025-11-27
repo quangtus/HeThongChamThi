@@ -505,6 +505,16 @@
   text-decoration: underline;
 }
 
+.admin-alert-warning {
+  background: #fef3c7;
+  border: 1px solid #facc15;
+  color: #78350f;
+  padding: 12px 16px;
+  border-radius: 10px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
 /* Modal Footer */
 .modal-footer,
 .admin-modal-footer {

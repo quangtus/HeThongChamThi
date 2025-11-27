@@ -12,6 +12,7 @@ const UsersPage = () => {
   const [editingUser, setEditingUser] = useState(null);
   const [alert, setAlert] = useState({ show: false, type: 'error', message: '' });
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedRole, setSelectedRole] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
@@ -28,8 +29,11 @@ const UsersPage = () => {
   // Load users and roles when component mounts
   useEffect(() => {
     loadUsers();
+  }, [currentPage, searchTerm, itemsPerPage, selectedRole]);
+
+  useEffect(() => {
     loadRoles();
-  }, [currentPage, searchTerm, itemsPerPage]);
+  }, []);
 
   const loadUsers = async () => {
     try {
@@ -37,7 +41,8 @@ const UsersPage = () => {
       const response = await userApi.getUsers({
         page: currentPage,
         limit: itemsPerPage,
-        search: searchTerm
+        search: searchTerm,
+        role_id: selectedRole || undefined
       });
       
       if (response.success) {
@@ -56,6 +61,11 @@ const UsersPage = () => {
 
   const handleSearch = (e) => {
     setSearchTerm(e.target.value);
+    setCurrentPage(1);
+  };
+
+  const handleRoleFilterChange = (e) => {
+    setSelectedRole(e.target.value);
     setCurrentPage(1);
   };
 
@@ -288,6 +298,22 @@ const UsersPage = () => {
           onChange={handleSearch}
           className="admin-search-input"
         />
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px', flexWrap: 'wrap' }}>
+          <label style={{ fontSize: '14px' }}>Lọc vai trò:</label>
+          <select
+            value={selectedRole}
+            onChange={handleRoleFilterChange}
+            className="admin-form-select"
+            style={{ width: 'auto', padding: '4px 8px' }}
+          >
+            <option value="">Tất cả</option>
+            {roles.map(role => (
+              <option key={role.role_id} value={String(role.role_id)}>
+                {role.role_name}
+              </option>
+            ))}
+          </select>
+        </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px' }}>
           <label style={{ fontSize: '14px' }}>Hiển thị:</label>
           <select
