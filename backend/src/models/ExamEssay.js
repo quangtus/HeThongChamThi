@@ -61,7 +61,7 @@ async function find(filter = {}, options = {}) {
         params.is_active = is_active;
     }
     if (search) {
-        where.push('(e.exam_code ILIKE :kw OR e.exam_title ILIKE :kw)');
+        where.push('(e.exam_code ILIKE :kw OR e.exam_title ILIKE :kw OR s.subject_name ILIKE :kw)');
         params.kw = `%${search}%`;
     }
 
@@ -97,12 +97,12 @@ async function count(filter = {}, options = {}) {
         params.is_active = is_active;
     }
     if (search) {
-        where.push('(e.exam_code ILIKE :kw OR e.exam_title ILIKE :kw)');
+        where.push('(e.exam_code ILIKE :kw OR e.exam_title ILIKE :kw OR s.subject_name ILIKE :kw)');
         params.kw = `%${search}%`;
     }
 
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-    const rows = await query(`SELECT COUNT(*)::int AS total FROM exam_essay e ${whereSql}`, params);
+    const rows = await query(`SELECT COUNT(*)::int AS total FROM exam_essay e LEFT JOIN subjects s ON e.subject_id = s.subject_id ${whereSql}`, params);
     return rows[0]?.total || 0;
 }
 

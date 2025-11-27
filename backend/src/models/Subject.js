@@ -1,4 +1,5 @@
 const { query } = require('../config/db');
+const { normalizeVietnamese, buildAccentInsensitiveSql, ACCENT_MAP_FROM, ACCENT_MAP_TO } = require('../utils/textNormalizer');
 
 // Helper: map DB row to API output
 function mapSubject(row) {
@@ -25,8 +26,22 @@ async function findAll(options = {}) {
     }
 
     if (search) {
-        where.push('(subject_code ILIKE :kw OR subject_name ILIKE :kw OR description ILIKE :kw)');
-        params.kw = `%${search}%`;
+        const normalizedSearch = normalizeVietnamese(search).toLowerCase();
+        params.accent_from = ACCENT_MAP_FROM;
+        params.accent_to = ACCENT_MAP_TO;
+
+        const asciiName = buildAccentInsensitiveSql('subject_name', 'accent_from', 'accent_to');
+        const asciiDescription = buildAccentInsensitiveSql('description', 'accent_from', 'accent_to');
+
+        where.push(`(
+            subject_code ILIKE :kw OR 
+            lower(subject_name) LIKE :kw OR 
+            lower(description) LIKE :kw OR
+            ${asciiName} LIKE :kw_ascii OR
+            ${asciiDescription} LIKE :kw_ascii
+        )`);
+        params.kw = `%${search.toLowerCase()}%`;
+        params.kw_ascii = `%${normalizedSearch}%`;
     }
 
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
@@ -97,9 +112,14 @@ async function updateById(id, updateData) {
     return await findById(id);
 }
 
-// Xóa môn thi (soft delete)
-async function deleteById(id) {
+// Vô hiệu hóa môn thi (soft delete)
+async function softDeleteById(id) {
     await query('UPDATE subjects SET is_active = false WHERE subject_id = :id', { id: Number(id) });
+}
+
+// Xóa hoàn toàn môn thi (hard delete)
+async function hardDeleteById(id) {
+    await query('DELETE FROM subjects WHERE subject_id = :id', { id: Number(id) });
 }
 
 // Đếm số lượng môn thi
@@ -113,8 +133,22 @@ async function count(options = {}) {
         params.is_active = is_active;
     }
     if (search) {
-        where.push('(subject_code ILIKE :kw OR subject_name ILIKE :kw OR description ILIKE :kw)');
-        params.kw = `%${search}%`;
+        const normalizedSearch = normalizeVietnamese(search).toLowerCase();
+        params.accent_from = ACCENT_MAP_FROM;
+        params.accent_to = ACCENT_MAP_TO;
+
+        const asciiName = buildAccentInsensitiveSql('subject_name', 'accent_from', 'accent_to');
+        const asciiDescription = buildAccentInsensitiveSql('description', 'accent_from', 'accent_to');
+
+        where.push(`(
+            subject_code ILIKE :kw OR 
+            lower(subject_name) LIKE :kw OR 
+            lower(description) LIKE :kw OR
+            ${asciiName} LIKE :kw_ascii OR
+            ${asciiDescription} LIKE :kw_ascii
+        )`);
+        params.kw = `%${search.toLowerCase()}%`;
+        params.kw_ascii = `%${normalizedSearch}%`;
     }
 
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
@@ -128,7 +162,8 @@ module.exports = {
     findByCode,
     insert,
     updateById,
-    deleteById,
+    softDeleteById,
+    hardDeleteById,
     count,
     mapSubject
 };

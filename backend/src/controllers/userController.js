@@ -237,8 +237,37 @@ const deleteUser = async(req, res) => {
     try {
         const { id } = req.params;
         console.log('🔍 Deleting user ID:', id);
+        const numericId = Number(id);
 
-        const result = await UserRepo.deleteById(id);
+        const existingUser = await UserRepo.findById(numericId);
+        if (!existingUser) {
+            return res.status(404).json({
+                success: false,
+                message: 'User không tồn tại'
+            });
+        }
+
+        const [candidateRelation, examinerRelation] = await Promise.all([
+            query('SELECT candidate_id FROM candidates WHERE user_id = :user_id LIMIT 1', { user_id: numericId }),
+            query('SELECT examiner_id FROM examiners WHERE user_id = :user_id LIMIT 1', { user_id: numericId })
+        ]);
+
+        const hasCandidate = candidateRelation.length > 0;
+        const hasExaminer = examinerRelation.length > 0;
+        const hasRelations = hasCandidate || hasExaminer;
+
+        let result;
+        let mode = 'hard';
+
+        if (hasRelations) {
+            result = await UserRepo.softDeleteById(numericId, {
+                deactivateCandidate: hasCandidate,
+                deactivateExaminer: hasExaminer
+            });
+            mode = 'soft';
+        } else {
+            result = await UserRepo.hardDeleteById(numericId);
+        }
 
         if (!result) {
             return res.status(404).json({
@@ -249,9 +278,24 @@ const deleteUser = async(req, res) => {
 
         console.log('✅ User deleted successfully:', id);
 
+        const relationLabels = [];
+        if (hasCandidate) relationLabels.push('thí sinh');
+        if (hasExaminer) relationLabels.push('cán bộ chấm thi');
+
+        const message = mode === 'soft'
+            ? `User đang liên kết với dữ liệu ${relationLabels.join(' và ')} nên đã được khóa thay vì xóa vĩnh viễn.`
+            : 'Xóa user thành công';
+
         res.json({
             success: true,
-            message: 'Xóa user thành công'
+            message,
+            data: {
+                mode,
+                relations: {
+                    candidate: hasCandidate,
+                    examiner: hasExaminer
+                }
+            }
         });
 
     } catch (error) {

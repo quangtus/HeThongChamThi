@@ -1,4 +1,5 @@
 const { query } = require('../config/db');
+const { normalizeVietnamese, buildAccentInsensitiveSql, ACCENT_MAP_FROM, ACCENT_MAP_TO } = require('../utils/textNormalizer');
 
 // Helper: map DB row to API output
 function mapCandidate(row) {
@@ -45,8 +46,23 @@ async function find(filter = {}, options = {}) {
         params.is_active = is_active;
     }
     if (search) {
-        where.push('(c.candidate_code ILIKE :kw OR u.full_name ILIKE :kw OR c.identity_card ILIKE :kw OR u.email ILIKE :kw)');
-        params.kw = `%${search}%`;
+        const normalizedSearch = normalizeVietnamese(search).toLowerCase();
+        params.accent_from = ACCENT_MAP_FROM;
+        params.accent_to = ACCENT_MAP_TO;
+
+        const asciiFullName = buildAccentInsensitiveSql('u.full_name', 'accent_from', 'accent_to');
+        const asciiAddress = buildAccentInsensitiveSql('c.address', 'accent_from', 'accent_to');
+
+        where.push(`(
+            c.candidate_code ILIKE :kw OR 
+            lower(u.full_name) LIKE :kw OR 
+            c.identity_card ILIKE :kw OR 
+            u.email ILIKE :kw OR
+            ${asciiFullName} LIKE :kw_ascii OR
+            ${asciiAddress} LIKE :kw_ascii
+        )`);
+        params.kw = `%${search.toLowerCase()}%`;
+        params.kw_ascii = `%${normalizedSearch}%`;
     }
 
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
@@ -77,12 +93,33 @@ async function count(filter = {}, options = {}) {
         params.is_active = is_active;
     }
     if (search) {
-        where.push('(c.candidate_code ILIKE :kw OR u.full_name ILIKE :kw OR c.identity_card ILIKE :kw OR u.email ILIKE :kw)');
-        params.kw = `%${search}%`;
+        const normalizedSearch = normalizeVietnamese(search).toLowerCase();
+        params.accent_from = ACCENT_MAP_FROM;
+        params.accent_to = ACCENT_MAP_TO;
+
+        const asciiFullName = buildAccentInsensitiveSql('u.full_name', 'accent_from', 'accent_to');
+        const asciiAddress = buildAccentInsensitiveSql('c.address', 'accent_from', 'accent_to');
+
+        where.push(`(
+            c.candidate_code ILIKE :kw OR 
+            lower(u.full_name) LIKE :kw OR 
+            c.identity_card ILIKE :kw OR 
+            u.email ILIKE :kw OR
+            ${asciiFullName} LIKE :kw_ascii OR
+            ${asciiAddress} LIKE :kw_ascii
+        )`);
+        params.kw = `%${search.toLowerCase()}%`;
+        params.kw_ascii = `%${normalizedSearch}%`;
     }
 
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-    const rows = await query(`SELECT COUNT(*)::int AS total FROM candidates c ${whereSql}`, params);
+    const rows = await query(`
+    SELECT COUNT(*)::int AS total
+    FROM candidates c
+    LEFT JOIN users u ON c.user_id = u.user_id
+    LEFT JOIN roles r ON u.role_id = r.role_id
+    ${whereSql}
+  `, params);
     return rows[0]?.total || 0;
 }
 

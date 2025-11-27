@@ -1,4 +1,5 @@
 const Subject = require('../models/Subject');
+const { query } = require('../config/db');
 
 /**
  * SUBJECT CONTROLLER
@@ -177,6 +178,7 @@ async function updateSubject(req, res) {
 async function deleteSubject(req, res) {
     try {
         const { id } = req.params;
+        const numericId = Number(id);
 
         const existing = await Subject.findById(id);
         if (!existing) {
@@ -186,11 +188,55 @@ async function deleteSubject(req, res) {
             });
         }
 
-        await Subject.deleteById(id);
+        const [
+            essayCountRows,
+            mcqCountRows,
+            registrationCountRows,
+            examinerSubjectRows
+        ] = await Promise.all([
+            query('SELECT COUNT(*)::int AS total FROM exam_essay WHERE subject_id = :id AND is_active = true', { id: numericId }),
+            query('SELECT COUNT(*)::int AS total FROM exam_mcq WHERE subject_id = :id AND is_active = true', { id: numericId }),
+            query('SELECT COUNT(*)::int AS total FROM candidate_exam_registrations WHERE subject_id = :id', { id: numericId }),
+            query('SELECT COUNT(*)::int AS total FROM examiner_subjects WHERE subject_id = :id', { id: numericId })
+        ]);
+
+        const essayCount = essayCountRows[0]?.total || 0;
+        const mcqCount = mcqCountRows[0]?.total || 0;
+        const registrationCount = registrationCountRows[0]?.total || 0;
+        const examinerSubjectCount = examinerSubjectRows[0]?.total || 0;
+
+        const blockingDependencies = [];
+        if (essayCount > 0) blockingDependencies.push(`${essayCount} đề thi tự luận`);
+        if (mcqCount > 0) blockingDependencies.push(`${mcqCount} đề thi trắc nghiệm`);
+        if (registrationCount > 0) blockingDependencies.push(`${registrationCount} đăng ký thi`);
+        if (examinerSubjectCount > 0) blockingDependencies.push(`${examinerSubjectCount} phân công môn cho cán bộ chấm thi`);
+
+        if (blockingDependencies.length > 0) {
+            // Không thể xóa vĩnh viễn, cho phép chuyển sang ngừng hoạt động để tránh sử dụng
+            await Subject.softDeleteById(id);
+            return res.status(200).json({
+                success: true,
+                message: `Không thể xóa vì môn thi đang được dùng trong ${blockingDependencies.join(', ')} nên đã chuyển sang trạng thái ngừng hoạt động.`,
+                data: {
+                    mode: 'soft',
+                    dependencies: {
+                        essay: essayCount,
+                        mcq: mcqCount,
+                        registrations: registrationCount,
+                        examinerSubjects: examinerSubjectCount
+                    }
+                }
+            });
+        }
+
+        await Subject.hardDeleteById(id);
 
         res.json({
             success: true,
-            message: 'Xóa môn thi thành công'
+            message: 'Đã xóa môn thi khỏi hệ thống',
+            data: {
+                mode: 'hard'
+            }
         });
     } catch (error) {
         console.error('Error deleting subject:', error);

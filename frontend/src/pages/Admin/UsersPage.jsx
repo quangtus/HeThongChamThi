@@ -159,7 +159,11 @@ const UsersPage = () => {
         const response = await userApi.deleteUser(user.user_id);
         
         if (response.success) {
-          setAlert({ show: true, type: 'success', message: 'Xóa user thành công!' });
+          const mode = response.data?.mode;
+          const dynamicMessage = response.message || (mode === 'soft'
+            ? 'User đang liên kết dữ liệu khác nên đã được khóa.'
+            : 'Xóa user thành công!');
+          setAlert({ show: true, type: 'success', message: dynamicMessage });
           loadUsers();
         } else {
           setAlert({ show: true, type: 'error', message: 'Lỗi: ' + response.message });

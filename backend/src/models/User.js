@@ -142,9 +142,32 @@ async function updateById(id, updateData) {
   return await findById(id);
 }
 
-async function deleteById(id) {
-  // Soft delete: set is_active = false instead of hard delete
-  const result = await query('UPDATE users SET is_active = false WHERE user_id = :id RETURNING user_id', { id: Number(id) });
+async function softDeleteById(id, options = {}) {
+  const numericId = Number(id);
+  const { deactivateCandidate = false, deactivateExaminer = false } = options;
+
+  const result = await query(
+    'UPDATE users SET is_active = false WHERE user_id = :id RETURNING user_id',
+    { id: numericId }
+  );
+
+  if (!result.length) {
+    return false;
+  }
+
+  if (deactivateCandidate) {
+    await query('UPDATE candidates SET is_active = false WHERE user_id = :id', { id: numericId });
+  }
+
+  if (deactivateExaminer) {
+    await query('UPDATE examiners SET is_active = false WHERE user_id = :id', { id: numericId });
+  }
+
+  return true;
+}
+
+async function hardDeleteById(id) {
+  const result = await query('DELETE FROM users WHERE user_id = :id RETURNING user_id', { id: Number(id) });
   return result.length > 0;
 }
 
@@ -155,5 +178,6 @@ module.exports = {
   findOneByEmailOrUsername,
   insert,
   updateById,
-  deleteById
+  softDeleteById,
+  hardDeleteById
 };

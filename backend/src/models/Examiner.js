@@ -1,4 +1,5 @@
 const { query } = require('../config/db');
+const { normalizeVietnamese, buildAccentInsensitiveSql, ACCENT_MAP_FROM, ACCENT_MAP_TO } = require('../utils/textNormalizer');
 
 // Map DB row to API output
 function mapExaminer(row) {
@@ -54,8 +55,22 @@ async function find(filter = {}, options = {}) {
         params.certification_level = certification_level;
     }
     if (search) {
-        where.push('(e.examiner_code ILIKE :kw OR u.full_name ILIKE :kw OR e.specialization ILIKE :kw)');
-        params.kw = `%${search}%`;
+        const normalizedSearch = normalizeVietnamese(search).toLowerCase();
+        params.accent_from = ACCENT_MAP_FROM;
+        params.accent_to = ACCENT_MAP_TO;
+
+        const asciiColumnFullName = buildAccentInsensitiveSql('u.full_name', 'accent_from', 'accent_to');
+        const asciiColumnSpecialization = buildAccentInsensitiveSql('e.specialization', 'accent_from', 'accent_to');
+
+        where.push(`(
+            e.examiner_code ILIKE :kw OR 
+            lower(u.full_name) LIKE :kw OR 
+            lower(e.specialization) LIKE :kw OR
+            ${asciiColumnFullName} LIKE :kw_ascii OR
+            ${asciiColumnSpecialization} LIKE :kw_ascii
+        )`);
+        params.kw = `%${search.toLowerCase()}%`;
+        params.kw_ascii = `%${normalizedSearch}%`;
     }
 
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
@@ -106,8 +121,22 @@ async function count(filter = {}, options = {}) {
         params.certification_level = certification_level;
     }
     if (search) {
-        where.push('(e.examiner_code ILIKE :kw OR u.full_name ILIKE :kw OR e.specialization ILIKE :kw)');
-        params.kw = `%${search}%`;
+        const normalizedSearch = normalizeVietnamese(search).toLowerCase();
+        params.accent_from = ACCENT_MAP_FROM;
+        params.accent_to = ACCENT_MAP_TO;
+
+        const asciiColumnFullName = buildAccentInsensitiveSql('u.full_name', 'accent_from', 'accent_to');
+        const asciiColumnSpecialization = buildAccentInsensitiveSql('e.specialization', 'accent_from', 'accent_to');
+
+        where.push(`(
+            e.examiner_code ILIKE :kw OR 
+            lower(u.full_name) LIKE :kw OR 
+            lower(e.specialization) LIKE :kw OR
+            ${asciiColumnFullName} LIKE :kw_ascii OR
+            ${asciiColumnSpecialization} LIKE :kw_ascii
+        )`);
+        params.kw = `%${search.toLowerCase()}%`;
+        params.kw_ascii = `%${normalizedSearch}%`;
     }
 
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';

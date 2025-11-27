@@ -20,6 +20,7 @@ const ExamEssaysPage = () => {
   const [editingQuestion, setEditingQuestion] = useState(null);
   const [alert, setAlert] = useState({ show: false, type: 'error', message: '' });
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedSubject, setSelectedSubject] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
@@ -51,12 +52,17 @@ const ExamEssaysPage = () => {
     ? Number(selectedExam.total_score || 0) - questionsTotalScore
     : 0;
 
-  useEffect(() => {
-    if (activeTab === 'exams') {
-      loadExams();
-      loadSubjects();
-    }
-  }, [activeTab, currentPage, searchTerm]);
+useEffect(() => {
+  if (activeTab === 'exams') {
+    loadExams();
+  }
+}, [activeTab, currentPage, searchTerm, selectedSubject]);
+
+useEffect(() => {
+  if (activeTab === 'exams' && subjects.length === 0) {
+    loadSubjects();
+  }
+}, [activeTab, subjects.length]);
 
   useEffect(() => {
     if (selectedExam) {
@@ -118,10 +124,12 @@ const ExamEssaysPage = () => {
   const loadExams = async () => {
     try {
       setLoading(true);
+      const keyword = searchTerm.trim();
       const response = await examEssayApi.getExamEssays({
         page: currentPage,
         limit: 10,
-        search: searchTerm
+        search: keyword || undefined,
+        subject_id: selectedSubject || undefined
       });
 
       if (response.success) {
@@ -380,10 +388,29 @@ const ExamEssaysPage = () => {
             <div className="search-box">
               <input
                 type="text"
-                placeholder="Tìm kiếm theo mã đề, môn..."
+                placeholder="Tìm kiếm theo mã đề..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                }}
               />
+            </div>
+            <div className="search-box">
+              <select
+                value={selectedSubject}
+                onChange={(e) => {
+                  setSelectedSubject(e.target.value);
+                  setCurrentPage(1);
+                }}
+              >
+                <option value="">Tất cả môn thi</option>
+                {subjects.map((subject) => (
+                  <option key={subject.subject_id} value={subject.subject_id}>
+                    {subject.subject_name}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
