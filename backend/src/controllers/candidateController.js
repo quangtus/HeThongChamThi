@@ -111,6 +111,23 @@ const createCandidate = async(req, res) => {
             });
         }
 
+        // Kiểm tra user có phải là candidate role không (role_id = 3)
+        if (user.role_id !== 3) {
+            return res.status(400).json({
+                success: false,
+                message: `User ID ${candidateData.user_id} không phải là thí sinh (role_id phải = 3). Vui lòng chọn user có role "Thí sinh" hoặc cập nhật role của user trước.`
+            });
+        }
+
+        // Kiểm tra user đã có candidate record chưa
+        const existingCandidate = await CandidateRepo.findByUserId(candidateData.user_id);
+        if (existingCandidate) {
+            return res.status(400).json({
+                success: false,
+                message: `User ID ${candidateData.user_id} đã có thông tin thí sinh rồi`
+            });
+        }
+
         // Kiểm tra candidate_code đã tồn tại chưa
         if (candidateData.candidate_code) {
             const existingCandidate = await CandidateRepo.findByCode(candidateData.candidate_code);
@@ -295,7 +312,7 @@ const toggleCandidateStatus = async(req, res) => {
     }
 };
 
-// @desc    Import danh sách thí sinh từ Excel
+// @desc    Import danh sách thí sinh từ Excel/CSV
 // @route   POST /api/candidates/import
 // @access  Private (Admin)
 const importCandidates = async(req, res) => {
@@ -303,13 +320,31 @@ const importCandidates = async(req, res) => {
         console.log('🔍 Importing candidates...');
 
         if (!req.file) {
-            return res.status(400).json({ success: false, message: 'Vui lòng upload file Excel (.xlsx)' });
+            return res.status(400).json({ success: false, message: 'Vui lòng upload file Excel (.xlsx, .xls) hoặc CSV (.csv)' });
         }
 
         const XLSX = require('xlsx');
-        const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
-        const sheetName = workbook.SheetNames[0];
-        const sheet = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+        let sheet;
+        
+        // Check if file is CSV or Excel
+        const fileExtension = req.file.originalname.toLowerCase().substring(req.file.originalname.lastIndexOf('.'));
+        
+        if (fileExtension === '.csv') {
+            // Read CSV file
+            const csvString = req.file.buffer.toString('utf8');
+            const workbook = XLSX.read(csvString, { type: 'string', sheetRows: 0 });
+            const sheetName = workbook.SheetNames[0];
+            sheet = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+        } else {
+            // Read Excel file
+            const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+            const sheetName = workbook.SheetNames[0];
+            sheet = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+        }
+
+        if (!sheet || sheet.length === 0) {
+            return res.status(400).json({ success: false, message: 'File không có dữ liệu hoặc định dạng không đúng' });
+        }
 
         const results = { success: 0, failed: 0, errors: [] };
         for (const [index, row] of sheet.entries()) {
@@ -340,18 +375,62 @@ const importCandidates = async(req, res) => {
                     return null;
                 };
 
-                const payload = {
-                    candidate_code: String(row.candidate_code || row.CANDIDATE_CODE || '').toUpperCase() || undefined,
-                    user_id: Number(row.user_id || row.USER_ID),
-                    date_of_birth: convertExcelDate(row.date_of_birth || row.DATE_OF_BIRTH),
-                    identity_card: row.identity_card || row.IDENTITY_CARD || undefined,
-                    address: row.address || row.ADDRESS || undefined,
-                    is_active: row.is_active === '' ? true : Boolean(row.is_active !== false)
-                };
+                // Hỗ trợ cả user_id và username (ưu tiên user_id nếu có cả hai)
+                let userId = null;
+                if (row.user_id || row.USER_ID) {
+                    // Nếu có user_id, dùng user_id (ưu tiên cao hơn)
+                    userId = Number(row.user_id || row.USER_ID);
+                    if (isNaN(userId) || userId < 1) {
+                        throw new Error('user_id không hợp lệ');
+                    }
+                } else if (row.username || row.USERNAME) {
+                    // Nếu không có user_id, tìm theo username (khuyến nghị)
+                    const username = String(row.username || row.USERNAME).trim();
+                    if (!username) {
+                        throw new Error('username không được để trống');
+                    }
+                    const user = await UserRepo.findOneByEmailOrUsername(null, username);
+                    if (!user) {
+                        throw new Error(`Username "${username}" không tồn tại trong hệ thống. Vui lòng import users trước hoặc kiểm tra lại username.`);
+                    }
+                    userId = user.user_id;
+                } else {
+                    throw new Error('Thiếu user_id hoặc username. Phải cung cấp một trong hai. Khuyến nghị: dùng username để dễ liên kết với file users.');
+                }
 
-                // Basic required checks per validation rules
-                if (!payload.user_id || !payload.date_of_birth) {
-                    throw new Error('Thiếu cột bắt buộc: user_id, date_of_birth');
+                const payload = {
+                    candidate_code: row.candidate_code || row.CANDIDATE_CODE 
+                        ? String(row.candidate_code || row.CANDIDATE_CODE).trim().toUpperCase() 
+                        : undefined,
+                    user_id: userId,
+                    date_of_birth: convertExcelDate(row.date_of_birth || row.DATE_OF_BIRTH),
+                    identity_card: row.identity_card || row.IDENTITY_CARD 
+                        ? String(row.identity_card || row.IDENTITY_CARD).trim() 
+                        : undefined,
+                    address: row.address || row.ADDRESS 
+                        ? String(row.address || row.ADDRESS).trim() 
+                        : undefined,
+                    is_active: row.is_active === '' || row.is_active === undefined 
+                        ? true 
+                        : Boolean(row.is_active !== false && row.is_active !== 'false' && row.is_active !== 0)
+                };
+                if (!payload.date_of_birth) {
+                    throw new Error('date_of_birth không hợp lệ hoặc thiếu');
+                }
+
+                // Validate date format
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(payload.date_of_birth)) {
+                    throw new Error('date_of_birth phải có định dạng YYYY-MM-DD');
+                }
+
+                // Validate candidate_code format if provided
+                if (payload.candidate_code && !/^[A-Z0-9_]+$/.test(payload.candidate_code)) {
+                    throw new Error('candidate_code chỉ chứa chữ hoa, số và dấu gạch dưới');
+                }
+
+                // Validate identity_card format if provided
+                if (payload.identity_card && (payload.identity_card.length < 9 || payload.identity_card.length > 20)) {
+                    throw new Error('identity_card phải có từ 9-20 ký tự');
                 }
 
                 // KIỂM TRA USER CÓ TỒN TẠI KHÔNG

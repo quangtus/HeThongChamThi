@@ -14,6 +14,7 @@ const SubjectsPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   const [formData, setFormData] = useState({
     subject_code: '',
@@ -24,14 +25,14 @@ const SubjectsPage = () => {
 
   useEffect(() => {
     loadSubjects();
-  }, [currentPage, searchTerm]);
+  }, [currentPage, searchTerm, itemsPerPage]);
 
   const loadSubjects = async () => {
     try {
       setLoading(true);
       const response = await subjectApi.getSubjects({
         page: currentPage,
-        limit: 10,
+        limit: itemsPerPage,
         search: searchTerm
       });
 
@@ -158,6 +159,23 @@ const SubjectsPage = () => {
             }}
             className="admin-search-input pl-12 w-full"
           />
+        </div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px' }}>
+          <label style={{ fontSize: '14px' }}>Hiển thị:</label>
+          <select
+            value={itemsPerPage}
+            onChange={(e) => {
+              setItemsPerPage(Number(e.target.value));
+              setCurrentPage(1);
+            }}
+            className="admin-form-select"
+            style={{ width: 'auto', padding: '4px 8px' }}
+          >
+            <option value={10}>10</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
+          <span style={{ fontSize: '14px', color: '#666' }}>mục/trang</span>
         </div>
       </div>
 

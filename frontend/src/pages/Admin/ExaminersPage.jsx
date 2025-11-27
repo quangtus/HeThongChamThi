@@ -12,6 +12,7 @@ const ExaminersPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [alert, setAlert] = useState({ show: false, type: 'error', message: '' });
   const [formData, setFormData] = useState({
     user_id: '',
@@ -25,18 +26,24 @@ const ExaminersPage = () => {
   // State để lưu thông tin user được chọn
   const [selectedUser, setSelectedUser] = useState(null);
 
-  // Load examiners and users when component mounts
+  // Load examiners when component mounts or filters change
   useEffect(() => {
     loadExaminers();
-    loadUsers();
-  }, [currentPage, searchTerm]);
+  }, [currentPage, searchTerm, itemsPerPage]);
+
+  // Load users when modal opens (only for creating new examiner)
+  useEffect(() => {
+    if (showModal && !editingExaminer) {
+      loadUsers();
+    }
+  }, [showModal, editingExaminer]);
 
   const loadExaminers = async () => {
     try {
       setLoading(true);
       const response = await examinerApi.getExaminers({
         page: currentPage,
-        limit: 10,
+        limit: itemsPerPage,
         search: searchTerm
       });
       
@@ -56,10 +63,24 @@ const ExaminersPage = () => {
 
   const loadUsers = async () => {
     try {
-      const response = await userApi.getUsers();
+      // Chỉ lấy users có role_id = 2 (examiner) và chưa có examiner record
+      const response = await userApi.getUsers({ 
+        role_id: 2, 
+        is_active: true,
+        limit: 1000 // Lấy tất cả để filter
+      });
       
       if (response.success) {
-        setUsers(response.data);
+        // Reload examiners để có danh sách mới nhất
+        const examinersResponse = await examinerApi.getExaminers({ limit: 1000 });
+        const currentExaminers = examinersResponse.success ? examinersResponse.data : examiners;
+        
+        // Filter: chỉ lấy users chưa có examiner record
+        const userIdsWithExaminer = new Set(currentExaminers.map(e => e.user_id));
+        const availableUsers = response.data.filter(user => 
+          !userIdsWithExaminer.has(user.user_id)
+        );
+        setUsers(availableUsers);
       } else {
         console.error('Lỗi khi tải danh sách users:', response.message);
       }
@@ -243,24 +264,81 @@ const ExaminersPage = () => {
           onChange={handleSearch}
           className="admin-search-input"
         />
-        <div className="mt-4" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <input type="file" id="examinerImport" accept=".xlsx,.xls" style={{ display: 'none' }}
+        <div className="mt-4" style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <input type="file" id="examinerImport" accept=".xlsx,.xls,.csv" style={{ display: 'none' }}
             onChange={async (e) => {
               const file = e.target.files?.[0];
               if (!file) return;
+              
+              // Validate file type
+              const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+              if (!['.xlsx', '.xls', '.csv'].includes(fileExtension)) {
+                setAlert({ show: true, type: 'error', message: 'Định dạng file không hợp lệ. Vui lòng chọn file .xlsx, .xls hoặc .csv' });
+                e.target.value = '';
+                return;
+              }
+
               try {
+                setLoading(true);
                 const res = await examinerApi.importExaminers(file);
-                setAlert({ show: true, type: 'success', message: res.message || 'Import thành công' });
+                
+                // Check if there are errors in the response
+                if (res.data && res.data.errors && res.data.errors.length > 0) {
+                  const errorCount = res.data.failed || 0;
+                  const successCount = res.data.success || 0;
+                  const errorDetails = res.data.errors.slice(0, 5).map(err => 
+                    `Dòng ${err.row}: ${err.message}`
+                  ).join('\n');
+                  
+                  setAlert({ 
+                    show: true, 
+                    type: 'error', 
+                    message: `Import hoàn tất: ${successCount} thành công, ${errorCount} lỗi.\n\nChi tiết lỗi:\n${errorDetails}${res.data.errors.length > 5 ? '\n...' : ''}` 
+                  });
+                } else {
+                  setAlert({ show: true, type: 'success', message: res.message || 'Import thành công' });
+                }
                 loadExaminers();
               } catch (error) {
                 const data = error.response?.data;
-                const detail = data?.errors?.[0]?.msg || data?.message || error.message;
-                setAlert({ show: true, type: 'error', message: 'Import lỗi: ' + detail });
+                let errorMessage = 'Import lỗi: ';
+                
+                if (data?.data?.errors && data.data.errors.length > 0) {
+                  // Backend returned detailed errors
+                  const errorCount = data.data.failed || 0;
+                  const successCount = data.data.success || 0;
+                  const errorDetails = data.data.errors.slice(0, 5).map(err => 
+                    `Dòng ${err.row}: ${err.message}`
+                  ).join('\n');
+                  errorMessage = `Import hoàn tất: ${successCount} thành công, ${errorCount} lỗi.\n\nChi tiết lỗi:\n${errorDetails}${data.data.errors.length > 5 ? '\n...' : ''}`;
+                } else {
+                  errorMessage += data?.errors?.[0]?.msg || data?.message || error.message;
+                }
+                
+                setAlert({ show: true, type: 'error', message: errorMessage });
               } finally {
+                setLoading(false);
                 e.target.value = '';
               }
             }} />
-          <button className="admin-btn admin-btn-submit" onClick={() => document.getElementById('examinerImport').click()}>Import Excel</button>
+          <button className="admin-btn admin-btn-submit" onClick={() => document.getElementById('examinerImport').click()}>Import Excel/CSV</button>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginLeft: 'auto' }}>
+            <label style={{ fontSize: '14px' }}>Hiển thị:</label>
+            <select
+              value={itemsPerPage}
+              onChange={(e) => {
+                setItemsPerPage(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="admin-form-select"
+              style={{ width: 'auto', padding: '4px 8px' }}
+            >
+              <option value={10}>10</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+            <span style={{ fontSize: '14px', color: '#666' }}>mục/trang</span>
+          </div>
         </div>
       </div>
 

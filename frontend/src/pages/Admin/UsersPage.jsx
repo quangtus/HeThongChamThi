@@ -11,6 +11,10 @@ const UsersPage = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [alert, setAlert] = useState({ show: false, type: 'error', message: '' });
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -25,15 +29,20 @@ const UsersPage = () => {
   useEffect(() => {
     loadUsers();
     loadRoles();
-  }, []);
+  }, [currentPage, searchTerm, itemsPerPage]);
 
   const loadUsers = async () => {
     try {
       setLoading(true);
-      const response = await userApi.getUsers();
+      const response = await userApi.getUsers({
+        page: currentPage,
+        limit: itemsPerPage,
+        search: searchTerm
+      });
       
       if (response.success) {
         setUsers(response.data);
+        setTotalPages(response.pagination?.pages || 1);
       } else {
         setAlert({ show: true, type: 'error', message: 'Lỗi khi tải danh sách users: ' + response.message });
       }
@@ -43,6 +52,11 @@ const UsersPage = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSearch = (e) => {
+    setSearchTerm(e.target.value);
+    setCurrentPage(1);
   };
 
   const loadRoles = async () => {
@@ -199,29 +213,97 @@ const UsersPage = () => {
       <div className="admin-header">
         <h1 className="admin-title">Quản lý người dùng</h1>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <input type="file" id="userImport" accept=".xlsx,.xls" style={{ display: 'none' }}
+          <input type="file" id="userImport" accept=".xlsx,.xls,.csv" style={{ display: 'none' }}
             onChange={async (e) => {
               const file = e.target.files?.[0];
               if (!file) return;
+              
+              // Validate file type
+              const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+              if (!['.xlsx', '.xls', '.csv'].includes(fileExtension)) {
+                setAlert({ show: true, type: 'error', message: 'Định dạng file không hợp lệ. Vui lòng chọn file .xlsx, .xls hoặc .csv' });
+                e.target.value = '';
+                return;
+              }
+
               try {
+                setLoading(true);
                 const res = await userApi.importUsers(file);
-                setAlert({ show: true, type: 'success', message: res.message || 'Import thành công' });
+                
+                // Check if there are errors in the response
+                if (res.data && res.data.errors && res.data.errors.length > 0) {
+                  const errorCount = res.data.failed || 0;
+                  const successCount = res.data.success || 0;
+                  const errorDetails = res.data.errors.slice(0, 5).map(err => 
+                    `Dòng ${err.row}: ${err.message}`
+                  ).join('\n');
+                  
+                  setAlert({ 
+                    show: true, 
+                    type: 'error', 
+                    message: `Import hoàn tất: ${successCount} thành công, ${errorCount} lỗi.\n\nChi tiết lỗi:\n${errorDetails}${res.data.errors.length > 5 ? '\n...' : ''}` 
+                  });
+                } else {
+                  setAlert({ show: true, type: 'success', message: res.message || 'Import thành công' });
+                }
                 loadUsers();
               } catch (error) {
                 const data = error.response?.data;
-                const detail = data?.errors?.[0]?.msg || data?.message || error.message;
-                setAlert({ show: true, type: 'error', message: 'Import lỗi: ' + detail });
+                let errorMessage = 'Import lỗi: ';
+                
+                if (data?.data?.errors && data.data.errors.length > 0) {
+                  // Backend returned detailed errors
+                  const errorCount = data.data.failed || 0;
+                  const successCount = data.data.success || 0;
+                  const errorDetails = data.data.errors.slice(0, 5).map(err => 
+                    `Dòng ${err.row}: ${err.message}`
+                  ).join('\n');
+                  errorMessage = `Import hoàn tất: ${successCount} thành công, ${errorCount} lỗi.\n\nChi tiết lỗi:\n${errorDetails}${data.data.errors.length > 5 ? '\n...' : ''}`;
+                } else {
+                  errorMessage += data?.errors?.[0]?.msg || data?.message || error.message;
+                }
+                
+                setAlert({ show: true, type: 'error', message: errorMessage });
               } finally {
+                setLoading(false);
                 e.target.value = '';
               }
             }} />
-          <button className="admin-btn admin-btn-submit" onClick={() => document.getElementById('userImport').click()}>Import Excel</button>
+          <button className="admin-btn admin-btn-submit" onClick={() => document.getElementById('userImport').click()}>Import Excel/CSV</button>
           <button
             onClick={handleAddNew}
             className="admin-add-btn"
           >
             + Thêm User
           </button>
+        </div>
+      </div>
+
+      {/* Search bar */}
+      <div className="admin-search">
+        <input
+          type="text"
+          placeholder="Tìm kiếm users..."
+          value={searchTerm}
+          onChange={handleSearch}
+          className="admin-search-input"
+        />
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px' }}>
+          <label style={{ fontSize: '14px' }}>Hiển thị:</label>
+          <select
+            value={itemsPerPage}
+            onChange={(e) => {
+              setItemsPerPage(Number(e.target.value));
+              setCurrentPage(1);
+            }}
+            className="admin-form-select"
+            style={{ width: 'auto', padding: '4px 8px' }}
+          >
+            <option value={10}>10</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
+          <span style={{ fontSize: '14px', color: '#666' }}>mục/trang</span>
         </div>
       </div>
 
@@ -283,6 +365,29 @@ const UsersPage = () => {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="admin-pagination">
+          <button
+            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+            disabled={currentPage === 1}
+            className="admin-pagination-btn"
+          >
+            Trước
+          </button>
+          <span className="admin-pagination-info">
+            Trang {currentPage} / {totalPages}
+          </span>
+          <button
+            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+            disabled={currentPage === totalPages}
+            className="admin-pagination-btn"
+          >
+            Sau
+          </button>
         </div>
       )}
 

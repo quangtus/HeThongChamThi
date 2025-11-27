@@ -1,0 +1,10 @@
+username,password,full_name,email,phone,role_id,is_active
+admin001,password123,Phạm Văn Admin,admin001@example.com,0123456789,1,true
+examiner001,password123,Lê Văn Chấm,examiner001@example.com,0111222333,2,true
+examiner002,password123,Trần Thị Giám Khảo,examiner002@example.com,0111222334,2,true
+examiner003,password123,Nguyễn Văn Chấm Thi,examiner003@example.com,0111222335,2,true
+candidate001,password123,Nguyễn Văn Thí Sinh,candidate001@example.com,0987654321,3,true
+candidate002,password123,Trần Thị Học Sinh,candidate002@example.com,0987654322,3,true
+candidate003,password123,Lê Văn Sinh Viên,candidate003@example.com,0987654323,3,true
+candidate004,password123,Phạm Thị Thí Sinh,candidate004@example.com,0987654324,3,true
+candidate005,password123,Hoàng Văn Học Viên,candidate005@example.com,0987654325,3,true

@@ -3,15 +3,21 @@ const { query } = require('../config/db');
 class CandidateExamRegistration {
     // Tạo đăng ký thi mới
     static async create(registrationData) {
-        const {
-            candidate_id,
-            subject_id,
-            exam_type,
-            exam_session,
-            exam_room,
-            seat_number,
-            notes
-        } = registrationData;
+        // Validate và chuẩn hóa dữ liệu
+        const candidate_id = parseInt(registrationData.candidate_id);
+        const subject_id = parseInt(registrationData.subject_id);
+        const exam_type = registrationData.exam_type?.toUpperCase();
+
+        // Validate required fields
+        if (!candidate_id || isNaN(candidate_id)) {
+            throw new Error('candidate_id không hợp lệ');
+        }
+        if (!subject_id || isNaN(subject_id)) {
+            throw new Error('subject_id không hợp lệ');
+        }
+        if (!exam_type || !['ESSAY', 'MCQ', 'BOTH'].includes(exam_type)) {
+            throw new Error('exam_type không hợp lệ. Phải là: ESSAY, MCQ, hoặc BOTH');
+        }
 
         const sql = `
       INSERT INTO candidate_exam_registrations 
@@ -20,17 +26,30 @@ class CandidateExamRegistration {
       RETURNING registration_id
     `;
 
-        const rows = await query(sql, {
+        const params = {
             candidate_id,
             subject_id,
             exam_type,
-            exam_session,
-            exam_room,
-            seat_number,
-            notes
-        });
+            exam_session: registrationData.exam_session || null,
+            exam_room: registrationData.exam_room || null,
+            seat_number: registrationData.seat_number || null,
+            notes: registrationData.notes || null
+        };
 
-        return rows[0].registration_id;
+        try {
+            const result = await query(sql, params);
+
+            // INSERT với RETURNING trả về rows (đã là array, không phải object có property rows)
+            if (!result || !result[0] || !result[0].registration_id) {
+                throw new Error('Không thể tạo đăng ký thi: không nhận được registration_id từ database');
+            }
+            return result[0].registration_id;
+        } catch (error) {
+            console.error('Error in CandidateExamRegistration.create:', error);
+            console.error('SQL:', sql);
+            console.error('Params:', params);
+            throw error;
+        }
     }
 
     // Lấy tất cả đăng ký thi với thông tin chi tiết
@@ -96,14 +115,31 @@ class CandidateExamRegistration {
             params.exam_session = filters.exam_session;
         }
 
+        // Search filter
+        if (filters.search) {
+            sql += ' AND (LOWER(u_candidate.full_name) LIKE :search OR LOWER(c.candidate_code) LIKE :search OR LOWER(s.subject_name) LIKE :search)';
+            params.search = `%${filters.search.toLowerCase()}%`;
+        }
+
+        // Get total count
+        const countSql = sql.replace(/SELECT[\s\S]*?FROM/, 'SELECT COUNT(*) as total FROM');
+        const countResult = await query(countSql, params);
+        const total = parseInt(countResult[0]?.total || 0);
+
         sql += ' ORDER BY cer.registration_date DESC';
 
+        // Pagination
         if (filters.limit) {
             sql += ' LIMIT :limit';
             params.limit = filters.limit;
         }
+        if (filters.offset !== undefined) {
+            sql += ' OFFSET :offset';
+            params.offset = filters.offset;
+        }
 
-        return await query(sql, params);
+        const registrations = await query(sql, params);
+        return { registrations, total };
     }
 
     // Lấy đăng ký thi theo ID
@@ -130,56 +166,105 @@ class CandidateExamRegistration {
 
     // Cập nhật trạng thái đăng ký thi
     static async updateStatus(registrationId, status, approvedBy = null, rejectionReason = null) {
+        // Xây dựng SQL động để xử lý NULL values đúng cách
+        const updateFields = ['status = :status'];
+        const params = { 
+            status, 
+            registrationId 
+        };
+
+        // Xử lý approved_by: luôn cập nhật (có thể là null)
+        updateFields.push('approved_by = :approvedBy');
+        params.approvedBy = (approvedBy !== null && approvedBy !== undefined) ? approvedBy : null;
+
+        // Xử lý approved_at: chỉ set khi status là APPROVED
+        if (status === 'APPROVED') {
+            updateFields.push('approved_at = CURRENT_TIMESTAMP');
+        } else {
+            // Nếu không phải APPROVED và đang chuyển từ APPROVED, giữ nguyên approved_at
+            // (không update field này)
+        }
+
+        // Xử lý rejection_reason
+        if (status === 'REJECTED') {
+            // Nếu là REJECTED, cập nhật rejection_reason (có thể null)
+            if (rejectionReason !== null && rejectionReason !== undefined && rejectionReason !== '') {
+                updateFields.push('rejection_reason = :rejectionReason');
+                params.rejectionReason = rejectionReason;
+            } else {
+                // Nếu không có lý do, set NULL
+                updateFields.push('rejection_reason = NULL');
+            }
+        } else {
+            // Nếu không phải REJECTED, clear rejection_reason
+            updateFields.push('rejection_reason = NULL');
+        }
+
         const sql = `
       UPDATE candidate_exam_registrations 
-      SET status = :status, 
-          approved_by = :approvedBy, 
-          approved_at = CASE WHEN :status = 'APPROVED' THEN CURRENT_TIMESTAMP ELSE approved_at END,
-          rejection_reason = :rejectionReason
+      SET ${updateFields.join(', ')}
       WHERE registration_id = :registrationId
     `;
 
-        const rows = await query(sql, { status, approvedBy, rejectionReason, registrationId });
-        return rows.length > 0;
+        try {
+            const result = await query(sql, params);
+            // UPDATE trả về rowCount, không phải rows
+            return result.rowCount > 0;
+        } catch (error) {
+            console.error('Error in updateStatus:', error);
+            console.error('SQL:', sql);
+            console.error('Params:', params);
+            throw error;
+        }
     }
 
     // Cập nhật thông tin đăng ký thi
     static async update(registrationId, updateData) {
-        const {
-            exam_type,
-            exam_session,
-            exam_room,
-            seat_number,
-            notes
-        } = updateData;
+        const updateFields = [];
+        const params = { registrationId };
+
+        if (updateData.exam_type !== undefined) {
+            updateFields.push('exam_type = :exam_type');
+            params.exam_type = updateData.exam_type;
+        }
+        if (updateData.exam_session !== undefined) {
+            updateFields.push('exam_session = :exam_session');
+            params.exam_session = updateData.exam_session;
+        }
+        if (updateData.exam_room !== undefined) {
+            updateFields.push('exam_room = :exam_room');
+            params.exam_room = updateData.exam_room;
+        }
+        if (updateData.seat_number !== undefined) {
+            updateFields.push('seat_number = :seat_number');
+            params.seat_number = updateData.seat_number;
+        }
+        if (updateData.notes !== undefined) {
+            updateFields.push('notes = :notes');
+            params.notes = updateData.notes;
+        }
+
+        if (updateFields.length === 0) {
+            return false;
+        }
 
         const sql = `
       UPDATE candidate_exam_registrations 
-      SET exam_type = :exam_type, 
-          exam_session = :exam_session, 
-          exam_room = :exam_room, 
-          seat_number = :seat_number, 
-          notes = :notes
+      SET ${updateFields.join(', ')}
       WHERE registration_id = :registrationId
     `;
 
-        const rows = await query(sql, {
-            exam_type,
-            exam_session,
-            exam_room,
-            seat_number,
-            notes,
-            registrationId
-        });
-
-        return rows.length > 0;
+        const result = await query(sql, params);
+        // UPDATE trả về rowCount, không phải rows
+        return result.rowCount > 0;
     }
 
     // Xóa đăng ký thi
     static async delete(registrationId) {
         const sql = 'DELETE FROM candidate_exam_registrations WHERE registration_id = :registrationId';
-        const rows = await query(sql, { registrationId });
-        return rows.length > 0;
+        const result = await query(sql, { registrationId });
+        // DELETE trả về rowCount, không phải rows
+        return result.rowCount > 0;
     }
 
     // Lấy thống kê đăng ký thi

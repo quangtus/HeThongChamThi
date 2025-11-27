@@ -84,9 +84,17 @@ function buildPgQuery(sql, params) {
     const nameToIndex = {};
     let i = 0;
     const text = sql.replace(/(^|[^:]):([a-zA-Z0-9_]+)/g, (match, prefix, name) => {
-        if (!(name in params)) throw new Error(`Thiếu tham số: ${name}`);
+        // Kiểm tra xem param có tồn tại không (cho phép undefined/null)
+        if (!(name in params)) {
+            // Nếu không có trong params, kiểm tra xem có phải là NULL literal không
+            if (sql.includes(`:${name}`) && match.includes('NULL')) {
+                return match.replace(`:${name}`, 'NULL');
+            }
+            throw new Error(`Thiếu tham số: ${name}`);
+        }
         if (!(name in nameToIndex)) {
-            values.push(params[name]);
+            // Cho phép null và undefined
+            values.push(params[name] === undefined ? null : params[name]);
             nameToIndex[name] = ++i;
         }
         return `${prefix}$${nameToIndex[name]}`;
@@ -100,7 +108,21 @@ const query = async(sql, params) => {
     try {
         const built = buildPgQuery(sql, params);
         const res = await pool.query(built);
-        // Trả về rows trực tiếp cho SELECT, hoặc cả res để lấy rowCount/rows khi cần
+        const sqlUpper = sql.trim().toUpperCase();
+        
+        // Đối với UPDATE/DELETE/INSERT:
+        // - Nếu có RETURNING clause, trả về rows (giống SELECT)
+        // - Nếu không có RETURNING, trả về res để có thể truy cập rowCount
+        if (sqlUpper.startsWith('UPDATE') || sqlUpper.startsWith('DELETE') || sqlUpper.startsWith('INSERT')) {
+            if (sqlUpper.includes('RETURNING')) {
+                // Có RETURNING, trả về rows
+                return res.rows;
+            } else {
+                // Không có RETURNING, trả về res để truy cập rowCount
+                return res;
+            }
+        }
+        // SELECT queries luôn trả về rows
         return res.rows;
     } catch (error) {
         console.error('❌ Lỗi truy vấn PostgreSQL:', error.message);

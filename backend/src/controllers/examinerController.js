@@ -114,6 +114,23 @@ const createExaminer = async(req, res) => {
             });
         }
 
+        // Kiểm tra user có phải là examiner role không (role_id = 2)
+        if (user.role_id !== 2) {
+            return res.status(400).json({
+                success: false,
+                message: `User ID ${examinerData.user_id} không phải là cán bộ chấm thi (role_id phải = 2). Vui lòng chọn user có role "Cán bộ chấm thi" hoặc cập nhật role của user trước.`
+            });
+        }
+
+        // Kiểm tra user đã có examiner record chưa
+        const existingExaminer = await ExaminerRepo.findByUserId(examinerData.user_id);
+        if (existingExaminer) {
+            return res.status(400).json({
+                success: false,
+                message: `User ID ${examinerData.user_id} đã có thông tin cán bộ chấm thi rồi`
+            });
+        }
+
         // Kiểm tra examiner_code đã tồn tại chưa
         if (examinerData.examiner_code) {
             const existingExaminer = await ExaminerRepo.findByCode(examinerData.examiner_code);
@@ -398,7 +415,7 @@ const getExaminerSubjects = async(req, res) => {
     }
 };
 
-// @desc    Import danh sách cán bộ chấm thi từ Excel
+// @desc    Import danh sách cán bộ chấm thi từ Excel/CSV
 // @route   POST /api/examiners/import
 // @access  Private (Admin)
 const importExaminers = async(req, res) => {
@@ -406,28 +423,91 @@ const importExaminers = async(req, res) => {
         console.log('🔍 Importing examiners...');
 
         if (!req.file) {
-            return res.status(400).json({ success: false, message: 'Vui lòng upload file Excel (.xlsx)' });
+            return res.status(400).json({ success: false, message: 'Vui lòng upload file Excel (.xlsx, .xls) hoặc CSV (.csv)' });
         }
 
         const XLSX = require('xlsx');
-        const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
-        const sheetName = workbook.SheetNames[0];
-        const sheet = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+        let sheet;
+        
+        // Check if file is CSV or Excel
+        const fileExtension = req.file.originalname.toLowerCase().substring(req.file.originalname.lastIndexOf('.'));
+        
+        if (fileExtension === '.csv') {
+            // Read CSV file
+            const csvString = req.file.buffer.toString('utf8');
+            const workbook = XLSX.read(csvString, { type: 'string', sheetRows: 0 });
+            const sheetName = workbook.SheetNames[0];
+            sheet = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+        } else {
+            // Read Excel file
+            const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+            const sheetName = workbook.SheetNames[0];
+            sheet = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+        }
+
+        if (!sheet || sheet.length === 0) {
+            return res.status(400).json({ success: false, message: 'File không có dữ liệu hoặc định dạng không đúng' });
+        }
 
         const results = { success: 0, failed: 0, errors: [] };
         for (const [index, row] of sheet.entries()) {
             try {
+                // Hỗ trợ cả user_id và username (ưu tiên user_id nếu có cả hai)
+                let userId = null;
+                if (row.user_id || row.USER_ID) {
+                    // Nếu có user_id, dùng user_id (ưu tiên cao hơn)
+                    userId = Number(row.user_id || row.USER_ID);
+                    if (isNaN(userId) || userId < 1) {
+                        throw new Error('user_id không hợp lệ');
+                    }
+                } else if (row.username || row.USERNAME) {
+                    // Nếu không có user_id, tìm theo username (khuyến nghị)
+                    const username = String(row.username || row.USERNAME).trim();
+                    if (!username) {
+                        throw new Error('username không được để trống');
+                    }
+                    const user = await UserRepo.findOneByEmailOrUsername(null, username);
+                    if (!user) {
+                        throw new Error(`Username "${username}" không tồn tại trong hệ thống. Vui lòng import users trước hoặc kiểm tra lại username.`);
+                    }
+                    userId = user.user_id;
+                } else {
+                    throw new Error('Thiếu user_id hoặc username. Phải cung cấp một trong hai. Khuyến nghị: dùng username để dễ liên kết với file users.');
+                }
+
                 const payload = {
-                    examiner_code: String(row.examiner_code || row.EXAMINER_CODE || '').toUpperCase() || undefined,
-                    user_id: Number(row.user_id || row.USER_ID),
-                    specialization: row.specialization || row.SPECIALIZATION || undefined,
+                    examiner_code: row.examiner_code || row.EXAMINER_CODE 
+                        ? String(row.examiner_code || row.EXAMINER_CODE).trim().toUpperCase() 
+                        : undefined,
+                    user_id: userId,
+                    specialization: row.specialization || row.SPECIALIZATION 
+                        ? String(row.specialization || row.SPECIALIZATION).trim() 
+                        : undefined,
                     experience_years: Number(row.experience_years || row.EXPERIENCE_YEARS || 0),
                     certification_level: (row.certification_level || row.CERTIFICATION_LEVEL || 'JUNIOR').toUpperCase(),
-                    is_active: row.is_active === '' ? true : Boolean(row.is_active !== false)
+                    is_active: row.is_active === '' || row.is_active === undefined 
+                        ? true 
+                        : Boolean(row.is_active !== false && row.is_active !== 'false' && row.is_active !== 0)
                 };
 
-                if (!payload.user_id) {
-                    throw new Error('Thiếu cột bắt buộc: user_id');
+                // Validate certification_level
+                if (!['JUNIOR', 'SENIOR', 'EXPERT'].includes(payload.certification_level)) {
+                    throw new Error('certification_level phải là JUNIOR, SENIOR hoặc EXPERT');
+                }
+
+                // Validate experience_years
+                if (isNaN(payload.experience_years) || payload.experience_years < 0 || payload.experience_years > 50) {
+                    throw new Error('experience_years phải là số từ 0-50');
+                }
+
+                // Validate examiner_code format if provided
+                if (payload.examiner_code && !/^[A-Z0-9_]+$/.test(payload.examiner_code)) {
+                    throw new Error('examiner_code chỉ chứa chữ hoa, số và dấu gạch dưới');
+                }
+
+                // Validate specialization length if provided
+                if (payload.specialization && payload.specialization.length > 100) {
+                    throw new Error('specialization không được quá 100 ký tự');
                 }
 
                 // KIỂM TRA USER CÓ TỒN TẠI KHÔNG

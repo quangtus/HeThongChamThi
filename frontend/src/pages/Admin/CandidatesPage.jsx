@@ -17,7 +17,11 @@ const CandidatesPage = () => {
   const [activeTab, setActiveTab] = useState('candidates'); // 'candidates' hoặc 'registrations'
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [registrationPage, setRegistrationPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [registrationTotalPages, setRegistrationTotalPages] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [registrationItemsPerPage, setRegistrationItemsPerPage] = useState(10);
   const [alert, setAlert] = useState({ show: false, type: 'error', message: '' });
   const [formData, setFormData] = useState({
     user_id: '',
@@ -41,24 +45,30 @@ const CandidatesPage = () => {
     notes: ''
   });
 
-  // Load candidates and users when component mounts
+  // Load candidates when component mounts
   useEffect(() => {
     if (activeTab === 'candidates') {
       loadCandidates();
-      loadUsers();
     } else if (activeTab === 'registrations') {
       loadRegistrations();
       loadSubjects();
       loadCandidates(); // Load candidates for registration form
     }
-  }, [currentPage, searchTerm, activeTab]);
+  }, [currentPage, registrationPage, searchTerm, activeTab, itemsPerPage, registrationItemsPerPage]);
+
+  // Load users when modal opens (only for creating new candidate)
+  useEffect(() => {
+    if (showModal && activeTab === 'candidates' && !editingCandidate) {
+      loadUsers();
+    }
+  }, [showModal, activeTab, editingCandidate]);
 
   const loadCandidates = async () => {
     try {
       setLoading(true);
       const response = await candidateApi.getCandidates({
         page: currentPage,
-        limit: 10,
+        limit: itemsPerPage,
         search: searchTerm
       });
       
@@ -78,10 +88,24 @@ const CandidatesPage = () => {
 
   const loadUsers = async () => {
     try {
-      const response = await userApi.getUsers();
+      // Chỉ lấy users có role_id = 3 (candidate) và chưa có candidate record
+      const response = await userApi.getUsers({ 
+        role_id: 3, 
+        is_active: true,
+        limit: 1000 // Lấy tất cả để filter
+      });
       
       if (response.success) {
-        setUsers(response.data);
+        // Reload candidates để có danh sách mới nhất
+        const candidatesResponse = await candidateApi.getCandidates({ limit: 1000 });
+        const currentCandidates = candidatesResponse.success ? candidatesResponse.data : candidates;
+        
+        // Filter: chỉ lấy users chưa có candidate record
+        const userIdsWithCandidate = new Set(currentCandidates.map(c => c.user_id));
+        const availableUsers = response.data.filter(user => 
+          !userIdsWithCandidate.has(user.user_id)
+        );
+        setUsers(availableUsers);
       } else {
         console.error('Lỗi khi tải danh sách users:', response.message);
       }
@@ -94,11 +118,14 @@ const CandidatesPage = () => {
     try {
       setLoading(true);
       const response = await registrationApi.getRegistrations({
-        limit: 50
+        page: registrationPage,
+        limit: registrationItemsPerPage,
+        search: searchTerm
       });
       
       if (response.data.success) {
         setRegistrations(response.data.data);
+        setRegistrationTotalPages(response.data.pagination?.pages || 1);
       } else {
         setAlert({ show: true, type: 'error', message: 'Lỗi khi tải danh sách đăng ký thi: ' + response.data.message });
       }
@@ -289,9 +316,34 @@ const CandidatesPage = () => {
     try {
       let response;
       if (editingRegistration) {
-        response = await registrationApi.updateRegistration(editingRegistration.registration_id, registrationFormData);
+        // Khi cập nhật, không gửi candidate_id và subject_id
+        const updateData = {
+          exam_type: registrationFormData.exam_type,
+          exam_session: registrationFormData.exam_session || null,
+          exam_room: registrationFormData.exam_room || null,
+          seat_number: registrationFormData.seat_number || null,
+          notes: registrationFormData.notes || null
+        };
+        response = await registrationApi.updateRegistration(editingRegistration.registration_id, updateData);
       } else {
-        response = await registrationApi.createRegistration(registrationFormData);
+        // Khi tạo mới, chuẩn hóa dữ liệu
+        const createData = {
+          candidate_id: parseInt(registrationFormData.candidate_id),
+          subject_id: parseInt(registrationFormData.subject_id),
+          exam_type: registrationFormData.exam_type,
+          exam_session: registrationFormData.exam_session || null,
+          exam_room: registrationFormData.exam_room || null,
+          seat_number: registrationFormData.seat_number || null,
+          notes: registrationFormData.notes || null
+        };
+
+        // Validate required fields
+        if (!createData.candidate_id || !createData.subject_id || !createData.exam_type) {
+          setAlert({ show: true, type: 'error', message: 'Vui lòng điền đầy đủ thông tin bắt buộc: Thí sinh, Môn thi, Loại thi' });
+          return;
+        }
+
+        response = await registrationApi.createRegistration(createData);
       }
       
       if (response.data.success) {
@@ -305,7 +357,8 @@ const CandidatesPage = () => {
       }
     } catch (error) {
       console.error('Lỗi khi lưu đăng ký thi:', error);
-      setAlert({ show: true, type: 'error', message: `Lỗi: ${error.response?.data?.message || error.message}` });
+      const errorMessage = error.response?.data?.message || error.response?.data?.error || error.message;
+      setAlert({ show: true, type: 'error', message: `Lỗi: ${errorMessage}` });
     }
   };
 
@@ -416,29 +469,96 @@ const CandidatesPage = () => {
       <div className="admin-search">
         <input
           type="text"
-          placeholder="Tìm kiếm thí sinh..."
+          placeholder={activeTab === 'candidates' ? "Tìm kiếm thí sinh..." : "Tìm kiếm đăng ký thi..."}
           value={searchTerm}
           onChange={handleSearch}
           className="admin-search-input"
         />
-        <div className="mt-4" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <input type="file" id="candidateImport" accept=".xlsx,.xls" style={{ display: 'none' }}
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              try {
-                const res = await candidateApi.importCandidates(file);
-                setAlert({ show: true, type: 'success', message: res.message || 'Import thành công' });
-                loadCandidates();
-              } catch (error) {
-                const data = error.response?.data;
-                const detail = data?.errors?.[0]?.msg || data?.message || error.message;
-                setAlert({ show: true, type: 'error', message: 'Import lỗi: ' + detail });
-              } finally {
-                e.target.value = '';
-              }
-            }} />
-          <button className="admin-btn admin-btn-submit" onClick={() => document.getElementById('candidateImport').click()}>Import Excel</button>
+        <div className="mt-4" style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {activeTab === 'candidates' && (
+            <>
+              <input type="file" id="candidateImport" accept=".xlsx,.xls,.csv" style={{ display: 'none' }}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  
+                  // Validate file type
+                  const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+                  if (!['.xlsx', '.xls', '.csv'].includes(fileExtension)) {
+                    setAlert({ show: true, type: 'error', message: 'Định dạng file không hợp lệ. Vui lòng chọn file .xlsx, .xls hoặc .csv' });
+                    e.target.value = '';
+                    return;
+                  }
+
+                  try {
+                    setLoading(true);
+                    const res = await candidateApi.importCandidates(file);
+                    
+                    // Check if there are errors in the response
+                    if (res.data && res.data.errors && res.data.errors.length > 0) {
+                      const errorCount = res.data.failed || 0;
+                      const successCount = res.data.success || 0;
+                      const errorDetails = res.data.errors.slice(0, 5).map(err => 
+                        `Dòng ${err.row}: ${err.message}`
+                      ).join('\n');
+                      
+                      setAlert({ 
+                        show: true, 
+                        type: 'error', 
+                        message: `Import hoàn tất: ${successCount} thành công, ${errorCount} lỗi.\n\nChi tiết lỗi:\n${errorDetails}${res.data.errors.length > 5 ? '\n...' : ''}` 
+                      });
+                    } else {
+                      setAlert({ show: true, type: 'success', message: res.message || 'Import thành công' });
+                    }
+                    loadCandidates();
+                  } catch (error) {
+                    const data = error.response?.data;
+                    let errorMessage = 'Import lỗi: ';
+                    
+                    if (data?.data?.errors && data.data.errors.length > 0) {
+                      // Backend returned detailed errors
+                      const errorCount = data.data.failed || 0;
+                      const successCount = data.data.success || 0;
+                      const errorDetails = data.data.errors.slice(0, 5).map(err => 
+                        `Dòng ${err.row}: ${err.message}`
+                      ).join('\n');
+                      errorMessage = `Import hoàn tất: ${successCount} thành công, ${errorCount} lỗi.\n\nChi tiết lỗi:\n${errorDetails}${data.data.errors.length > 5 ? '\n...' : ''}`;
+                    } else {
+                      errorMessage += data?.errors?.[0]?.msg || data?.message || error.message;
+                    }
+                    
+                    setAlert({ show: true, type: 'error', message: errorMessage });
+                  } finally {
+                    setLoading(false);
+                    e.target.value = '';
+                  }
+                }} />
+              <button className="admin-btn admin-btn-submit" onClick={() => document.getElementById('candidateImport').click()}>Import Excel/CSV</button>
+            </>
+          )}
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginLeft: 'auto' }}>
+            <label style={{ fontSize: '14px' }}>Hiển thị:</label>
+            <select
+              value={activeTab === 'candidates' ? itemsPerPage : registrationItemsPerPage}
+              onChange={(e) => {
+                const value = Number(e.target.value);
+                if (activeTab === 'candidates') {
+                  setItemsPerPage(value);
+                  setCurrentPage(1);
+                } else {
+                  setRegistrationItemsPerPage(value);
+                  setRegistrationPage(1);
+                }
+              }}
+              className="admin-form-select"
+              style={{ width: 'auto', padding: '4px 8px' }}
+            >
+              <option value={10}>10</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+            <span style={{ fontSize: '14px', color: '#666' }}>mục/trang</span>
+          </div>
         </div>
       </div>
 
@@ -586,7 +706,7 @@ const CandidatesPage = () => {
           )}
 
           {/* Pagination */}
-          {totalPages > 1 && (
+          {activeTab === 'candidates' && totalPages > 1 && (
             <div className="admin-pagination">
               <button
                 onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
@@ -601,6 +721,27 @@ const CandidatesPage = () => {
               <button
                 onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                 disabled={currentPage === totalPages}
+                className="admin-pagination-btn"
+              >
+                Sau
+              </button>
+            </div>
+          )}
+          {activeTab === 'registrations' && registrationTotalPages > 1 && (
+            <div className="admin-pagination">
+              <button
+                onClick={() => setRegistrationPage(prev => Math.max(prev - 1, 1))}
+                disabled={registrationPage === 1}
+                className="admin-pagination-btn"
+              >
+                Trước
+              </button>
+              <span className="admin-pagination-info">
+                Trang {registrationPage} / {registrationTotalPages}
+              </span>
+              <button
+                onClick={() => setRegistrationPage(prev => Math.min(prev + 1, registrationTotalPages))}
+                disabled={registrationPage === registrationTotalPages}
                 className="admin-pagination-btn"
               >
                 Sau
@@ -643,14 +784,27 @@ const CandidatesPage = () => {
                       onChange={handleInputChange}
                       className="admin-form-select"
                       required
+                      disabled={editingCandidate} // Không cho phép đổi user khi đang edit
                     >
-                      <option value="">-- Chọn user --</option>
-                      {users.map((user) => (
-                        <option key={user.user_id} value={user.user_id}>
-                          {user.username} - {user.full_name}
+                      <option value="">-- Chọn user (chỉ hiển thị users có role Thí sinh) --</option>
+                      {users.length === 0 ? (
+                        <option value="" disabled>
+                          Không có user nào có role Thí sinh hoặc tất cả đã có candidate record
                         </option>
-                      ))}
+                      ) : (
+                        users.map((user) => (
+                          <option key={user.user_id} value={user.user_id}>
+                            {user.username} - {user.full_name} {user.role_name ? `(${user.role_name})` : ''}
+                          </option>
+                        ))
+                      )}
                     </select>
+                    {users.length === 0 && !editingCandidate && (
+                      <small className="admin-form-hint" style={{ color: '#e74c3c', display: 'block', marginTop: '5px' }}>
+                        ⚠️ Không có user nào có role "Thí sinh" (role_id = 3) hoặc tất cả đã có candidate record. 
+                        Vui lòng tạo user mới với role "Thí sinh" trước.
+                      </small>
+                    )}
                   </div>
 
                   <div className="admin-form-group">

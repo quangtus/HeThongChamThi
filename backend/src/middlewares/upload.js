@@ -9,13 +9,21 @@ const upload = multer({
     fileSize: 10 * 1024 * 1024 // 10MB
   },
   fileFilter: (req, file, cb) => {
-    // accept excel mime types
-    const allowed = [
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'application/vnd.ms-excel'
+    // Accept Excel and CSV mime types
+    const allowedMimeTypes = [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+      'application/vnd.ms-excel', // .xls
+      'text/csv', // .csv
+      'application/csv', // .csv (alternative)
+      'text/plain' // .csv (some systems)
     ];
-    if (!allowed.includes(file.mimetype)) {
-      return cb(new Error('Định dạng file không hợp lệ. Vui lòng chọn file .xlsx'));
+    
+    // Also check file extension as fallback
+    const allowedExtensions = ['.xlsx', '.xls', '.csv'];
+    const fileExtension = file.originalname.toLowerCase().substring(file.originalname.lastIndexOf('.'));
+    
+    if (!allowedMimeTypes.includes(file.mimetype) && !allowedExtensions.includes(fileExtension)) {
+      return cb(new Error('Định dạng file không hợp lệ. Vui lòng chọn file .xlsx, .xls hoặc .csv'));
     }
     cb(null, true);
   }

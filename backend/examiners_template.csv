@@ -1,0 +1,4 @@
+user_id,username,examiner_code,specialization,experience_years,certification_level,is_active
+,examiner001,CB001,Toán học,5,SENIOR,true
+,examiner002,CB002,Vật lý,8,EXPERT,true
+,examiner003,CB003,Hóa học,3,JUNIOR,true

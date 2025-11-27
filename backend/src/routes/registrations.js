@@ -84,10 +84,19 @@ router.post('/', authenticateToken, requireAdminOrCandidate, registrationValidat
 // @access  Private (Admin, Supervisor)
 router.put('/:id/status', authenticateToken, requireAdminOrSupervisor, statusUpdateValidation, updateRegistrationStatus);
 
+// Validation rules for update (không yêu cầu candidate_id và subject_id)
+const registrationUpdateValidation = [
+  body('exam_type').optional().isIn(['ESSAY', 'MCQ', 'BOTH']).withMessage('Loại thi không hợp lệ'),
+  body('exam_session').optional().isString().isLength({ max: 50 }).withMessage('Ca thi không hợp lệ'),
+  body('exam_room').optional().isString().isLength({ max: 50 }).withMessage('Phòng thi không hợp lệ'),
+  body('seat_number').optional().isString().isLength({ max: 10 }).withMessage('Số bàn không hợp lệ'),
+  body('notes').optional().isString().isLength({ max: 500 }).withMessage('Ghi chú quá dài')
+];
+
 // @route   PUT /api/registrations/:id
 // @desc    Cập nhật thông tin đăng ký thi
 // @access  Private (Admin, Supervisor)
-router.put('/:id', authenticateToken, requireAdminOrSupervisor, registrationValidation, updateRegistration);
+router.put('/:id', authenticateToken, requireAdminOrSupervisor, registrationUpdateValidation, updateRegistration);
 
 // @route   DELETE /api/registrations/:id
 // @desc    Xóa đăng ký thi

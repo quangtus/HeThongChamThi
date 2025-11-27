@@ -10,7 +10,47 @@ const getUsers = async(req, res) => {
     try {
         console.log('🔍 Getting users list...');
 
-        // Query với JOIN để lấy thông tin role
+        const { search, is_active, role_id, page = 1, limit = 10 } = req.query;
+        const skip = (page - 1) * limit;
+
+        // Build WHERE clause
+        let whereConditions = [];
+        const params = {};
+
+        if (search) {
+            whereConditions.push(`(LOWER(u.username) LIKE :search OR LOWER(u.full_name) LIKE :search OR LOWER(u.email) LIKE :search)`);
+            params.search = `%${search.toLowerCase()}%`;
+        }
+
+        if (is_active !== undefined) {
+            whereConditions.push(`u.is_active = :is_active`);
+            params.is_active = is_active === 'true';
+        }
+
+        // Filter by role_id if provided
+        if (role_id !== undefined) {
+            const roleIdNum = parseInt(role_id);
+            if (!isNaN(roleIdNum) && roleIdNum > 0) {
+                whereConditions.push(`u.role_id = :role_id`);
+                params.role_id = roleIdNum;
+            }
+        }
+
+        const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+        // Get total count
+        const countResult = await query(`
+      SELECT COUNT(*) as total
+      FROM users u
+      LEFT JOIN roles r ON u.role_id = r.role_id
+      ${whereClause}
+    `, params);
+        const total = parseInt(countResult[0]?.total || 0);
+
+        // Get paginated data
+        params.limit = parseInt(limit);
+        params.offset = parseInt(skip);
+        
         const users = await query(`
       SELECT 
         u.user_id,
@@ -21,11 +61,14 @@ const getUsers = async(req, res) => {
         u.is_active,
         u.last_login,
         u.created_at,
+        u.role_id,
         r.role_name
       FROM users u
       LEFT JOIN roles r ON u.role_id = r.role_id
+      ${whereClause}
       ORDER BY u.created_at DESC
-    `);
+      LIMIT :limit OFFSET :offset
+    `, params);
 
         console.log('✅ Found users:', users.length);
 
@@ -33,7 +76,12 @@ const getUsers = async(req, res) => {
             success: true,
             message: 'Lấy danh sách users thành công',
             data: users,
-            total: users.length
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total,
+                pages: Math.ceil(total / limit)
+            }
         });
 
     } catch (error) {
@@ -216,7 +264,7 @@ const deleteUser = async(req, res) => {
     }
 };
 
-// @desc    Import danh sách users từ Excel
+// @desc    Import danh sách users từ Excel/CSV
 // @route   POST /api/users/import
 // @access  Private (Admin)
 const importUsers = async(req, res) => {
@@ -224,43 +272,101 @@ const importUsers = async(req, res) => {
         console.log('🔍 Importing users...');
 
         if (!req.file) {
-            return res.status(400).json({ success: false, message: 'Vui lòng upload file Excel (.xlsx)' });
+            return res.status(400).json({ success: false, message: 'Vui lòng upload file Excel (.xlsx, .xls) hoặc CSV (.csv)' });
         }
 
         const XLSX = require('xlsx');
-        const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
-        const sheetName = workbook.SheetNames[0];
-        const sheet = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+        let sheet;
+        
+        // Check if file is CSV or Excel
+        const fileExtension = req.file.originalname.toLowerCase().substring(req.file.originalname.lastIndexOf('.'));
+        
+        if (fileExtension === '.csv') {
+            // Read CSV file
+            const csvString = req.file.buffer.toString('utf8');
+            const workbook = XLSX.read(csvString, { type: 'string', sheetRows: 0 });
+            const sheetName = workbook.SheetNames[0];
+            sheet = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+        } else {
+            // Read Excel file
+            const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+            const sheetName = workbook.SheetNames[0];
+            sheet = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+        }
+
+        if (!sheet || sheet.length === 0) {
+            return res.status(400).json({ success: false, message: 'File không có dữ liệu hoặc định dạng không đúng' });
+        }
 
         const results = { success: 0, failed: 0, errors: [] };
         
         for (const [index, row] of sheet.entries()) {
             try {
+                // Normalize field names (support both lowercase and uppercase)
                 const payload = {
-                    username: row.username || row.USERNAME,
-                    email: row.email || row.EMAIL || undefined,
-                    password: row.password || row.PASSWORD || 'default123', // Default password
-                    full_name: row.full_name || row.FULL_NAME,
-                    phone: row.phone || row.PHONE || undefined,
-                    role_id: Number(row.role_id || row.ROLE_ID || 3), // Default to candidate role
-                    is_active: row.is_active === '' ? true : Boolean(row.is_active !== false)
+                    username: String(row.username || row.USERNAME || '').trim(),
+                    email: row.email || row.EMAIL ? String(row.email || row.EMAIL).trim() : undefined,
+                    password: row.password || row.PASSWORD || 'default123',
+                    full_name: String(row.full_name || row.FULL_NAME || '').trim(),
+                    phone: row.phone || row.PHONE ? String(row.phone || row.PHONE).trim() : undefined,
+                    role_id: Number(row.role_id || row.ROLE_ID || 3),
+                    is_active: row.is_active === '' || row.is_active === undefined ? true : Boolean(row.is_active !== false && row.is_active !== 'false' && row.is_active !== 0)
                 };
 
-                // Basic required checks
-                if (!payload.username || !payload.full_name) {
-                    throw new Error('Thiếu cột bắt buộc: username, full_name');
+                // Validate required fields
+                if (!payload.username || payload.username === '') {
+                    throw new Error('Thiếu cột bắt buộc: username');
+                }
+                if (!payload.full_name || payload.full_name === '') {
+                    throw new Error('Thiếu cột bắt buộc: full_name');
                 }
 
-                // Validate role_id exists
-                if (payload.role_id < 1 || payload.role_id > 3) {
+                // Validate username format
+                if (!/^[a-zA-Z0-9_]+$/.test(payload.username)) {
+                    throw new Error('Username chỉ chứa chữ cái, số và dấu gạch dưới');
+                }
+
+                // Validate email format if provided
+                if (payload.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)) {
+                    throw new Error('Email không hợp lệ');
+                }
+
+                // Validate role_id
+                if (isNaN(payload.role_id) || payload.role_id < 1 || payload.role_id > 3) {
                     throw new Error('role_id phải là 1 (Admin), 2 (Examiner), hoặc 3 (Candidate)');
+                }
+
+                // Validate password length
+                if (payload.password.length < 6) {
+                    throw new Error('Password phải có ít nhất 6 ký tự');
+                }
+
+                // Check username/email uniqueness BEFORE insert
+                const existingUser = await UserRepo.findOneByEmailOrUsername(payload.email, payload.username);
+                if (existingUser) {
+                    if (existingUser.username === payload.username) {
+                        throw new Error(`Username "${payload.username}" đã tồn tại`);
+                    }
+                    if (payload.email && existingUser.email === payload.email) {
+                        throw new Error(`Email "${payload.email}" đã tồn tại`);
+                    }
                 }
 
                 await UserRepo.insert(payload);
                 results.success += 1;
             } catch (err) {
                 results.failed += 1;
-                results.errors.push({ row: index + 2, message: err.message });
+                const errorMessage = err.code === '23505' 
+                    ? 'Username hoặc email đã tồn tại' 
+                    : err.message;
+                results.errors.push({ 
+                    row: index + 2, 
+                    message: errorMessage,
+                    data: {
+                        username: row.username || row.USERNAME || '',
+                        email: row.email || row.EMAIL || ''
+                    }
+                });
             }
         }
 

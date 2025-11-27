@@ -78,7 +78,11 @@ const Alert = ({
             {icons[type]}
           </div>
           <div className="ml-3 flex-1">
-            <p className="text-sm font-semibold">{message}</p>
+            {typeof message === 'string' && message.includes('\n') ? (
+              <div className="text-sm font-semibold whitespace-pre-line">{message}</div>
+            ) : (
+              <p className="text-sm font-semibold">{message}</p>
+            )}
           </div>
           {onClose && (
             <div className="ml-auto pl-3">

@@ -1,0 +1,6 @@
+user_id,username,candidate_code,date_of_birth,identity_card,address,is_active
+,candidate001,TS001,2000-01-15,123456789,Hà Nội,true
+,candidate002,TS002,2000-02-20,987654321,TP.HCM,true
+,candidate003,TS003,2001-03-25,111222333,Đà Nẵng,true
+,candidate004,TS004,2000-04-10,444555666,Hải Phòng,true
+,candidate005,TS005,2001-05-15,777888999,Cần Thơ,true
