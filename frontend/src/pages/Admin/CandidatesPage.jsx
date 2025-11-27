@@ -754,7 +754,7 @@ const CandidatesPage = () => {
       {/* Modal */}
       {showModal && (
         <div className="admin-modal-overlay">
-          <div className="admin-modal">
+          <div className="admin-modal admin-modal--wide">
             <div className="admin-modal-header">
               <h2 className="admin-modal-title">
                 {editingCandidate ? 'Sửa thông tin thí sinh' : 'Thêm thí sinh mới'}
@@ -915,7 +915,7 @@ const CandidatesPage = () => {
       {/* Registration Modal */}
       {showRegistrationModal && (
         <div className="admin-modal-overlay">
-          <div className="admin-modal">
+          <div className="admin-modal admin-modal--wide">
             <div className="admin-modal-header">
               <h2 className="admin-modal-title">
                 {editingRegistration ? 'Sửa đăng ký thi' : 'Thêm đăng ký thi mới'}

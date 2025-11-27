@@ -47,6 +47,23 @@ export const uploadApi = {
     }
   },
 
+  async uploadCriteriaImage(file, meta = {}) {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      if (meta.folder) formData.append('folder', meta.folder);
+      if (meta.questionNo != null) formData.append('questionNo', String(meta.questionNo));
+      if (meta.criterionNo != null) formData.append('criterionNo', String(meta.criterionNo));
+      const res = await api.post('/upload-criteria-image', formData, defaultUploadConfig);
+      return res.data;
+    } catch (error) {
+      return {
+        success: false,
+        message: extractError(error, 'Không thể tải ảnh tiêu chí lên Cloudinary')
+      };
+    }
+  },
+
   async deleteFile(key) {
     if (!key) return { success: true };
     try {

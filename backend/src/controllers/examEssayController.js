@@ -284,11 +284,22 @@ async function addQuestion(req, res) {
             });
         }
 
+        const requestedScore = parseFloat(max_score);
+
+        const currentTotalScore = await ExamEssay.getQuestionsScoreSum(essayId);
+        const examTotalScore = parseFloat(exam.total_score);
+        if (currentTotalScore + requestedScore - examTotalScore > 1e-6) {
+            return res.status(400).json({
+                success: false,
+                message: `Tổng điểm câu hỏi (${(currentTotalScore + requestedScore).toFixed(2)}) vượt tổng điểm đề thi (${examTotalScore.toFixed(2)}).`
+            });
+        }
+
         const questionData = {
             essay_id: parseInt(essayId),
             question_number: parseInt(question_number),
             question_text,
-            max_score: parseFloat(max_score),
+            max_score: requestedScore,
             grading_criteria: parseIfJson(grading_criteria),
             sample_answer: sample_answer || null,
             estimated_time: estimated_time ? parseInt(estimated_time) : null
@@ -319,24 +330,44 @@ async function updateQuestion(req, res) {
     try {
         const { questionId } = req.params;
         const { grading_criteria } = req.body;
-        const updateData = {
-            ...req.body,
-            grading_criteria: grading_criteria !== undefined ? parseIfJson(grading_criteria) : undefined
-        };
-
-        const updatedQuestion = await ExamEssay.updateQuestion(questionId, updateData);
-
-        if (!updatedQuestion) {
+        const question = await ExamEssay.getQuestionById(questionId);
+        if (!question) {
             return res.status(404).json({
                 success: false,
                 message: 'Không tìm thấy câu hỏi'
             });
         }
 
+        const updateData = {
+            ...req.body,
+            grading_criteria: grading_criteria !== undefined ? parseIfJson(grading_criteria) : undefined
+        };
+
+        if (updateData.max_score !== undefined) {
+            const exam = await ExamEssay.findById(question.essay_id);
+            if (!exam) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Không tìm thấy đề thi tự luận liên quan'
+                });
+            }
+            const othersScore = await ExamEssay.getQuestionsScoreSum(question.essay_id, questionId);
+            const requestedScore = parseFloat(updateData.max_score);
+            const examTotalScore = parseFloat(exam.total_score);
+            if (othersScore + requestedScore - examTotalScore > 1e-6) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Tổng điểm câu hỏi (${(othersScore + requestedScore).toFixed(2)}) vượt tổng điểm đề thi (${examTotalScore.toFixed(2)}).`
+                });
+            }
+        }
+
+        await ExamEssay.updateQuestion(questionId, updateData);
+
         res.json({
             success: true,
             message: 'Cập nhật câu hỏi thành công',
-            data: updatedQuestion
+            data: await ExamEssay.getQuestionById(questionId)
         });
     } catch (error) {
         console.error('Error updating essay question:', error);

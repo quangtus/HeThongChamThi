@@ -225,6 +225,29 @@ async function getQuestions(essay_id) {
     return rows.map(mapEssayQuestion);
 }
 
+async function getQuestionById(question_id) {
+    const rows = await query(`
+    SELECT * FROM essay_questions
+    WHERE question_id = :question_id
+  `, { question_id: Number(question_id) });
+    return rows[0] ? mapEssayQuestion(rows[0]) : null;
+}
+
+async function getQuestionsScoreSum(essay_id, excludeQuestionId) {
+    const params = { essay_id: Number(essay_id) };
+    let sql = `
+    SELECT COALESCE(SUM(max_score), 0)::float AS total
+    FROM essay_questions
+    WHERE essay_id = :essay_id
+  `;
+    if (excludeQuestionId) {
+        sql += ' AND question_id != :exclude_id';
+        params.exclude_id = Number(excludeQuestionId);
+    }
+    const rows = await query(sql, params);
+    return parseFloat(rows[0]?.total || 0);
+}
+
 // Thêm câu hỏi vào đề thi
 async function addQuestion(questionData) {
     const {
@@ -300,6 +323,8 @@ module.exports = {
     deleteById,
     hardDeleteById,
     getQuestions,
+    getQuestionById,
+    getQuestionsScoreSum,
     addQuestion,
     updateQuestion,
     deleteQuestion,

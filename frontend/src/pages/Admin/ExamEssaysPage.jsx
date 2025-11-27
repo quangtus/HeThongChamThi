@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { examEssayApi, subjectApi } from '../../api/adminApi';
+import uploadApi from '../../api/upload';
 import Alert from '../../components/ui/Alert';
 import { validateExamEssayForm, validateEssayQuestionForm, prettyJSON, safeJSONParse } from '../../utils/formValidation';
 import '../../styles/admin.css';
@@ -39,35 +40,10 @@ const ExamEssaysPage = () => {
     sample_answer: '',
     estimated_time: ''
   });
-  // UX-friendly criteria builder state
-  const [criteriaList, setCriteriaList] = useState(['']);
+  const createEmptyCriterion = () => ({ text: '', attachmentUrl: '' });
+  const [criteriaList, setCriteriaList] = useState([createEmptyCriterion()]);
   const [criteriaNotes, setCriteriaNotes] = useState('');
-
-  // Helper: pretty print grading_criteria JSON
-  const formatCriteria = () => {
-    try {
-      const obj = typeof questionFormData.grading_criteria === 'string'
-        ? JSON.parse(questionFormData.grading_criteria || '{}')
-        : (questionFormData.grading_criteria || {});
-      const pretty = JSON.stringify(obj, null, 2);
-      setQuestionFormData({ ...questionFormData, grading_criteria: pretty });
-    } catch (e) {
-      setAlert({ show: true, type: 'warning', message: 'JSON không hợp lệ. Vui lòng kiểm tra lại.' });
-    }
-  };
-
-  const applyCriteriaTemplate = () => {
-    const template = {
-      criteria: [
-        'Trình bày rõ ràng',
-        'Đúng công thức',
-        'Lập luận chặt chẽ'
-      ],
-      notes: ''
-    };
-    const pretty = JSON.stringify(template, null, 2);
-    setQuestionFormData({ ...questionFormData, grading_criteria: pretty });
-  };
+  const [criteriaUploading, setCriteriaUploading] = useState({});
 
   useEffect(() => {
     if (activeTab === 'exams') {
@@ -81,6 +57,57 @@ const ExamEssaysPage = () => {
       loadQuestions(selectedExam.essay_id);
     }
   }, [selectedExam]);
+
+  const handleCriterionChange = (index, field, value) => {
+    setCriteriaList(prev =>
+      prev.map((item, idx) => (idx === index ? { ...item, [field]: value } : item))
+    );
+  };
+
+  const handleAddCriterion = () => {
+    setCriteriaList(prev => [...prev, createEmptyCriterion()]);
+  };
+
+  const handleRemoveCriterion = (index) => {
+    setCriteriaList(prev => {
+      if (prev.length === 1) {
+        return [createEmptyCriterion()];
+      }
+      return prev.filter((_, idx) => idx !== index);
+    });
+  };
+
+  const handleAttachmentUpload = async(index, file) => {
+    if (!file) return;
+    setCriteriaUploading(prev => ({ ...prev, [index]: true }));
+    try {
+      const response = await uploadApi.uploadCriteriaImage(file, {
+        questionNo: questionFormData.question_number || index + 1,
+        criterionNo: index + 1
+      });
+      if (!response?.success || !response?.url) {
+        throw new Error(response?.message || 'Upload thất bại');
+      }
+      setCriteriaList(prev =>
+        prev.map((item, idx) => (idx === index ? { ...item, attachmentUrl: response.url } : item))
+      );
+      setAlert({ show: true, type: 'success', message: 'Tải ảnh tiêu chí thành công!' });
+    } catch (error) {
+      setAlert({ show: true, type: 'error', message: `Không thể tải ảnh: ${error.message}` });
+    } finally {
+      setCriteriaUploading(prev => {
+        const next = { ...prev };
+        delete next[index];
+        return next;
+      });
+    }
+  };
+
+  const handleAttachmentRemove = (index) => {
+    setCriteriaList(prev =>
+      prev.map((item, idx) => (idx === index ? { ...item, attachmentUrl: '' } : item))
+    );
+  };
 
   const loadExams = async () => {
     try {
@@ -156,8 +183,13 @@ const ExamEssaysPage = () => {
     try {
       setLoading(true);
       const criteriaObj = {
-        criteria: criteriaList.map(c => (c || '').trim()).filter(Boolean),
-        notes: criteriaNotes
+        criteria: criteriaList
+          .map(item => ({
+            text: (item?.text || '').trim(),
+            attachmentUrl: item?.attachmentUrl || ''
+          }))
+          .filter(item => item.text || item.attachmentUrl),
+        notes: criteriaNotes?.trim() || ''
       };
       const payload = {
         ...questionFormData,
@@ -257,10 +289,19 @@ const ExamEssaysPage = () => {
           ? JSON.parse(question.grading_criteria || '{}')
           : (question.grading_criteria || {});
         const arr = Array.isArray(parsed.criteria) ? parsed.criteria : [];
-        setCriteriaList(arr.length ? arr : ['']);
+        const mapped = arr.map(item => {
+          if (typeof item === 'string') {
+            return { text: item, attachmentUrl: '' };
+          }
+          return {
+            text: item?.text || '',
+            attachmentUrl: item?.attachmentUrl || item?.attachment_url || ''
+          };
+        });
+        setCriteriaList(mapped.length ? mapped : [createEmptyCriterion()]);
         setCriteriaNotes(parsed.notes || '');
       } catch {
-        setCriteriaList(['']);
+        setCriteriaList([createEmptyCriterion()]);
         setCriteriaNotes('');
       }
     } else {
@@ -273,7 +314,7 @@ const ExamEssaysPage = () => {
         sample_answer: '',
         estimated_time: ''
       });
-      setCriteriaList(['']);
+      setCriteriaList([createEmptyCriterion()]);
       setCriteriaNotes('');
     }
     setShowQuestionModal(true);
@@ -282,6 +323,9 @@ const ExamEssaysPage = () => {
   const handleCloseQuestionModal = () => {
     setShowQuestionModal(false);
     setEditingQuestion(null);
+    setCriteriaList([createEmptyCriterion()]);
+    setCriteriaNotes('');
+    setCriteriaUploading({});
   };
 
   const handleViewQuestions = (exam) => {
@@ -566,25 +610,78 @@ const ExamEssaysPage = () => {
               </div>
               <div className="form-group">
                 <label>Tiêu chí chấm điểm</label>
-                <div className="mb-2">
-                  {criteriaList.map((c, idx) => (
-                    <div key={idx} className="flex items-center gap-2 mb-2">
+                <div className="criteria-list">
+                  {criteriaList.map((criterion, idx) => (
+                    <div key={idx} className="criteria-row">
+                      <div className="criteria-row__header">
+                        <strong>Tiêu chí #{idx + 1}</strong>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => handleRemoveCriterion(idx)}
+                        >
+                          Xóa
+                        </button>
+                      </div>
                       <input
                         type="text"
                         className="admin-form-input"
-                        placeholder={`Tiêu chí #${idx+1}`}
-                        value={c}
-                        onChange={(e) => {
-                          const next = [...criteriaList];
-                          next[idx] = e.target.value;
-                          setCriteriaList(next);
-                        }}
+                        placeholder={`Nhập mô tả tiêu chí #${idx + 1}`}
+                        value={criterion.text}
+                        onChange={(e) => handleCriterionChange(idx, 'text', e.target.value)}
                       />
-                      <button type="button" className="btn btn-secondary" onClick={() => setCriteriaList(criteriaList.filter((_,i)=>i!==idx))}>Xóa</button>
+                      <div className="criteria-actions">
+                        <input
+                          id={`criteria-upload-${idx}`}
+                          type="file"
+                          accept="image/*"
+                          style={{ display: 'none' }}
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            if (file) {
+                              handleAttachmentUpload(idx, file);
+                            }
+                            event.target.value = '';
+                          }}
+                        />
+                        <label
+                          htmlFor={`criteria-upload-${idx}`}
+                          className="btn btn-secondary"
+                          style={{ cursor: 'pointer' }}
+                        >
+                          {criteriaUploading[idx] ? 'Đang tải...' : 'Tải ảnh'}
+                        </label>
+                        {criterion.attachmentUrl && (
+                          <>
+                            <a
+                              href={criterion.attachmentUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="criteria-link"
+                            >
+                              Xem ảnh
+                            </a>
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              onClick={() => handleAttachmentRemove(idx)}
+                            >
+                              Xóa ảnh
+                            </button>
+                            <img
+                              src={criterion.attachmentUrl}
+                              alt={`Tiêu chí #${idx + 1}`}
+                              className="criteria-thumbnail"
+                            />
+                          </>
+                        )}
+                      </div>
                     </div>
                   ))}
-                  <button type="button" className="btn btn-primary" onClick={() => setCriteriaList([...criteriaList, ''])}>+ Thêm tiêu chí</button>
                 </div>
+                <button type="button" className="btn btn-primary" onClick={handleAddCriterion}>
+                  + Thêm tiêu chí
+                </button>
                 <label>Ghi chú (tùy chọn)</label>
                 <textarea
                   className="admin-form-textarea"
