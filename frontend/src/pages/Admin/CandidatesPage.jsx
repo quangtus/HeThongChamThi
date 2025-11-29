@@ -16,6 +16,7 @@ const CandidatesPage = () => {
   const [editingRegistration, setEditingRegistration] = useState(null);
   const [activeTab, setActiveTab] = useState('candidates'); // 'candidates' hoặc 'registrations'
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [registrationPage, setRegistrationPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -45,6 +46,19 @@ const CandidatesPage = () => {
     notes: ''
   });
 
+  // Debounce search term - chỉ gọi API sau khi người dùng ngừng gõ 500ms
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+      setCurrentPage(1); // Reset về trang 1 khi tìm kiếm
+      setRegistrationPage(1); // Reset registration page khi tìm kiếm
+    }, 500);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [searchTerm]);
+
   // Load candidates when component mounts
   useEffect(() => {
     if (activeTab === 'candidates') {
@@ -54,7 +68,7 @@ const CandidatesPage = () => {
       loadSubjects();
       loadCandidates(); // Load candidates for registration form
     }
-  }, [currentPage, registrationPage, searchTerm, activeTab, itemsPerPage, registrationItemsPerPage]);
+  }, [currentPage, registrationPage, debouncedSearchTerm, activeTab, itemsPerPage, registrationItemsPerPage]);
 
   // Load users when modal opens (only for creating new candidate)
   useEffect(() => {
@@ -69,7 +83,7 @@ const CandidatesPage = () => {
       const response = await candidateApi.getCandidates({
         page: currentPage,
         limit: itemsPerPage,
-        search: searchTerm
+        search: debouncedSearchTerm
       });
       
       if (response.success) {
@@ -120,7 +134,7 @@ const CandidatesPage = () => {
       const response = await registrationApi.getRegistrations({
         page: registrationPage,
         limit: registrationItemsPerPage,
-        search: searchTerm
+        search: debouncedSearchTerm
       });
       
       if (response.data.success) {
@@ -283,7 +297,7 @@ const CandidatesPage = () => {
 
   const handleSearch = (e) => {
     setSearchTerm(e.target.value);
-    setCurrentPage(1);
+    // Không reset currentPage ở đây nữa vì đã xử lý trong debounce effect
   };
 
   const formatDate = (dateString) => {

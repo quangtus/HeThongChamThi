@@ -20,6 +20,7 @@ const ExamEssaysPage = () => {
   const [editingQuestion, setEditingQuestion] = useState(null);
   const [alert, setAlert] = useState({ show: false, type: 'error', message: '' });
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -52,11 +53,23 @@ const ExamEssaysPage = () => {
     ? Number(selectedExam.total_score || 0) - questionsTotalScore
     : 0;
 
+  // Debounce search term - chỉ gọi API sau khi người dùng ngừng gõ 500ms
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+      setCurrentPage(1); // Reset về trang 1 khi tìm kiếm
+    }, 500);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [searchTerm]);
+
 useEffect(() => {
   if (activeTab === 'exams') {
     loadExams();
   }
-}, [activeTab, currentPage, searchTerm, selectedSubject]);
+}, [activeTab, currentPage, debouncedSearchTerm, selectedSubject]);
 
 useEffect(() => {
   if (activeTab === 'exams' && subjects.length === 0) {
@@ -124,7 +137,7 @@ useEffect(() => {
   const loadExams = async () => {
     try {
       setLoading(true);
-      const keyword = searchTerm.trim();
+      const keyword = debouncedSearchTerm.trim();
       const response = await examEssayApi.getExamEssays({
         page: currentPage,
         limit: 10,
@@ -392,7 +405,7 @@ useEffect(() => {
                 value={searchTerm}
                 onChange={(e) => {
                   setSearchTerm(e.target.value);
-                  setCurrentPage(1);
+                  // Không reset currentPage ở đây nữa vì đã xử lý trong debounce effect
                 }}
               />
             </div>

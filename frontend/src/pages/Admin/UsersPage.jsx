@@ -12,6 +12,7 @@ const UsersPage = () => {
   const [editingUser, setEditingUser] = useState(null);
   const [alert, setAlert] = useState({ show: false, type: 'error', message: '' });
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [selectedRole, setSelectedRole] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -26,10 +27,22 @@ const UsersPage = () => {
     is_active: true
   });
 
+  // Debounce search term - chỉ gọi API sau khi người dùng ngừng gõ 500ms
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+      setCurrentPage(1); // Reset về trang 1 khi tìm kiếm
+    }, 500);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [searchTerm]);
+
   // Load users and roles when component mounts
   useEffect(() => {
     loadUsers();
-  }, [currentPage, searchTerm, itemsPerPage, selectedRole]);
+  }, [currentPage, debouncedSearchTerm, itemsPerPage, selectedRole]);
 
   useEffect(() => {
     loadRoles();
@@ -41,7 +54,7 @@ const UsersPage = () => {
       const response = await userApi.getUsers({
         page: currentPage,
         limit: itemsPerPage,
-        search: searchTerm,
+        search: debouncedSearchTerm,
         role_id: selectedRole || undefined
       });
       
@@ -61,7 +74,7 @@ const UsersPage = () => {
 
   const handleSearch = (e) => {
     setSearchTerm(e.target.value);
-    setCurrentPage(1);
+    // Không reset currentPage ở đây nữa vì đã xử lý trong debounce effect
   };
 
   const handleRoleFilterChange = (e) => {
