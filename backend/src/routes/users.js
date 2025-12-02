@@ -65,8 +65,17 @@ const updateUserValidation = [
     .withMessage('Username chỉ chứa chữ cái, số và dấu gạch dưới'),
     body('password')
     .optional()
-    .isLength({ min: 6 })
-    .withMessage('Password phải có ít nhất 6 ký tự'),
+    .custom((value) => {
+      // Nếu password được cung cấp (không phải undefined/null) nhưng là chuỗi rỗng, bỏ qua validation
+      if (value === undefined || value === null || value === '') {
+        return true;
+      }
+      // Nếu có giá trị, kiểm tra độ dài
+      if (value.length < 6) {
+        throw new Error('Password phải có ít nhất 6 ký tự');
+      }
+      return true;
+    }),
     body('full_name')
     .optional()
     .trim()

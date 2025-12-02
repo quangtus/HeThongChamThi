@@ -74,7 +74,7 @@ const ExaminersPage = () => {
     }
   };
 
-  const loadUsers = async () => {
+  const loadUsers = async (includeUserId = null) => {
     try {
       // Chỉ lấy users có role_id = 2 (examiner) và chưa có examiner record
       const response = await userApi.getUsers({ 
@@ -88,10 +88,10 @@ const ExaminersPage = () => {
         const examinersResponse = await examinerApi.getExaminers({ limit: 1000 });
         const currentExaminers = examinersResponse.success ? examinersResponse.data : examiners;
         
-        // Filter: chỉ lấy users chưa có examiner record
+        // Filter: chỉ lấy users chưa có examiner record, hoặc include user hiện tại nếu đang edit
         const userIdsWithExaminer = new Set(currentExaminers.map(e => e.user_id));
         const availableUsers = response.data.filter(user => 
-          !userIdsWithExaminer.has(user.user_id)
+          !userIdsWithExaminer.has(user.user_id) || (includeUserId && user.user_id === includeUserId)
         );
         setUsers(availableUsers);
       } else {
@@ -157,18 +157,53 @@ const ExaminersPage = () => {
     }
   };
 
-  const handleEdit = (examiner) => {
-    setEditingExaminer(examiner);
-    // Tìm user tương ứng với examiner
-    const user = users.find(u => u.user_id === examiner.user_id);
-    setSelectedUser(user);
+  const handleEdit = async (examiner) => {
+    // Load examiner mới nhất từ API để đảm bảo có dữ liệu cập nhật
+    let latestExaminer = examiner;
+    try {
+      const examinerResponse = await examinerApi.getExaminerById(examiner.examiner_id);
+      if (examinerResponse.success) {
+        latestExaminer = examinerResponse.data;
+      }
+    } catch (error) {
+      console.error('Lỗi khi load examiner mới nhất, sử dụng dữ liệu từ danh sách:', error);
+    }
+    
+    setEditingExaminer(latestExaminer);
+    
+    // Load user hiện tại từ API để hiển thị thông tin
+    let currentUser = null;
+    try {
+      const userResponse = await userApi.getUserById(latestExaminer.user_id);
+      if (userResponse.success) {
+        currentUser = userResponse.data;
+        setSelectedUser(currentUser);
+      }
+    } catch (error) {
+      console.error('Lỗi khi load user:', error);
+    }
+    
+    // Load users với include user hiện tại và đảm bảo user hiện tại có trong danh sách
+    await loadUsers(latestExaminer.user_id);
+    
+    // Đảm bảo user hiện tại luôn có trong danh sách
+    if (currentUser) {
+      setUsers(prevUsers => {
+        const exists = prevUsers.some(u => u.user_id === latestExaminer.user_id);
+        if (!exists) {
+          return [currentUser, ...prevUsers];
+        }
+        return prevUsers;
+      });
+    }
+    
     setFormData({
-      user_id: examiner.user_id,
-      examiner_code: examiner.examiner_code,
-      specialization: examiner.specialization || '',
-      experience_years: examiner.experience_years || 0,
-      certification_level: examiner.certification_level || 'JUNIOR',
-      is_active: examiner.is_active
+      user_id: latestExaminer.user_id,
+      examiner_code: latestExaminer.examiner_code,
+      specialization: latestExaminer.specialization || '',
+      experience_years: latestExaminer.experience_years || 0,
+      certification_level: latestExaminer.certification_level || 'JUNIOR',
+      is_active: latestExaminer.is_active
     });
     setShowModal(true);
   };
@@ -480,6 +515,7 @@ const ExaminersPage = () => {
                       onChange={handleInputChange}
                       className="admin-form-select"
                       required
+                      disabled={editingExaminer} // Không cho phép đổi user khi đang edit
                     >
                       <option value="">-- Chọn user --</option>
                       {users.map((user) => (

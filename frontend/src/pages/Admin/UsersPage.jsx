@@ -124,6 +124,11 @@ const UsersPage = () => {
         role_id: roleId
       };
       
+      // Nếu đang edit và password để trống, không gửi password lên backend
+      if (editingUser && (!submitData.password || submitData.password.trim() === '')) {
+        delete submitData.password;
+      }
+      
       console.log('📤 Sending user data:', submitData);
       
       let response;

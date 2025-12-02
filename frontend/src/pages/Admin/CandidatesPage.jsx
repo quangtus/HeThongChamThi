@@ -100,7 +100,7 @@ const CandidatesPage = () => {
     }
   };
 
-  const loadUsers = async () => {
+  const loadUsers = async (includeUserId = null) => {
     try {
       // Chỉ lấy users có role_id = 3 (candidate) và chưa có candidate record
       const response = await userApi.getUsers({ 
@@ -114,10 +114,10 @@ const CandidatesPage = () => {
         const candidatesResponse = await candidateApi.getCandidates({ limit: 1000 });
         const currentCandidates = candidatesResponse.success ? candidatesResponse.data : candidates;
         
-        // Filter: chỉ lấy users chưa có candidate record
+        // Filter: chỉ lấy users chưa có candidate record, hoặc include user hiện tại nếu đang edit
         const userIdsWithCandidate = new Set(currentCandidates.map(c => c.user_id));
         const availableUsers = response.data.filter(user => 
-          !userIdsWithCandidate.has(user.user_id)
+          !userIdsWithCandidate.has(user.user_id) || (includeUserId && user.user_id === includeUserId)
         );
         setUsers(availableUsers);
       } else {
@@ -229,18 +229,110 @@ const CandidatesPage = () => {
     }
   };
 
-  const handleEdit = (candidate) => {
-    setEditingCandidate(candidate);
-    // Tìm user tương ứng với candidate
-    const user = users.find(u => u.user_id === candidate.user_id);
-    setSelectedUser(user);
+  const handleEdit = async (candidate) => {
+    // Load candidate mới nhất từ API để đảm bảo có dữ liệu cập nhật
+    let latestCandidate = candidate;
+    try {
+      const candidateResponse = await candidateApi.getCandidateById(candidate.candidate_id);
+      if (candidateResponse.success) {
+        latestCandidate = candidateResponse.data;
+      }
+    } catch (error) {
+      console.error('Lỗi khi load candidate mới nhất, sử dụng dữ liệu từ danh sách:', error);
+    }
+    
+    setEditingCandidate(latestCandidate);
+    
+    // Load user hiện tại từ API để hiển thị thông tin
+    let currentUser = null;
+    try {
+      const userResponse = await userApi.getUserById(latestCandidate.user_id);
+      if (userResponse.success) {
+        currentUser = userResponse.data;
+        setSelectedUser(currentUser);
+      }
+    } catch (error) {
+      console.error('Lỗi khi load user:', error);
+    }
+    
+    // Load users với include user hiện tại và đảm bảo user hiện tại có trong danh sách
+    await loadUsers(latestCandidate.user_id);
+    
+    // Đảm bảo user hiện tại luôn có trong danh sách
+    if (currentUser) {
+      setUsers(prevUsers => {
+        const exists = prevUsers.some(u => u.user_id === latestCandidate.user_id);
+        if (!exists) {
+          return [currentUser, ...prevUsers];
+        }
+        return prevUsers;
+      });
+    }
+    
+    // Format date_of_birth cho input type="date" (YYYY-MM-DD)
+    let formattedDate = '';
+    if (latestCandidate.date_of_birth) {
+      try {
+        let dateValue = latestCandidate.date_of_birth;
+        
+        // Nếu đã là định dạng YYYY-MM-DD, dùng trực tiếp
+        if (typeof dateValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+          formattedDate = dateValue;
+        } else {
+          // Parse date và format lại
+          let date;
+          if (typeof dateValue === 'string') {
+            // Xử lý các định dạng string khác nhau
+            // Nếu có timezone info, parse bình thường
+            if (dateValue.includes('T') || dateValue.includes('Z') || dateValue.includes('+')) {
+              date = new Date(dateValue);
+            } else {
+              // Nếu chỉ có date (YYYY-MM-DD hoặc DD/MM/YYYY), parse cẩn thận
+              // Thử parse như ISO date trước
+              date = new Date(dateValue + 'T00:00:00');
+              // Nếu không hợp lệ, thử parse như local date
+              if (isNaN(date.getTime())) {
+                // Thử format DD/MM/YYYY hoặc MM/DD/YYYY
+                const parts = dateValue.split(/[\/\-]/);
+                if (parts.length === 3) {
+                  // Giả sử format là YYYY-MM-DD hoặc DD-MM-YYYY
+                  if (parts[0].length === 4) {
+                    // YYYY-MM-DD
+                    date = new Date(parts[0], parts[1] - 1, parts[2]);
+                  } else {
+                    // DD-MM-YYYY hoặc MM-DD-YYYY
+                    date = new Date(parts[2], parts[1] - 1, parts[0]);
+                  }
+                }
+              }
+            }
+          } else if (dateValue instanceof Date) {
+            date = dateValue;
+          } else {
+            date = new Date(dateValue);
+          }
+          
+          // Format thành YYYY-MM-DD, tránh timezone issues
+          if (date && !isNaN(date.getTime())) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            formattedDate = `${year}-${month}-${day}`;
+          }
+        }
+      } catch (error) {
+        console.error('Lỗi khi format date_of_birth:', error, latestCandidate.date_of_birth);
+        formattedDate = '';
+      }
+    }
+    
     setFormData({
-      user_id: candidate.user_id,
-      candidate_code: candidate.candidate_code,
-      date_of_birth: candidate.date_of_birth,
-      identity_card: candidate.identity_card || '',
-      address: candidate.address || '',
-      is_active: candidate.is_active
+      user_id: latestCandidate.user_id,
+      candidate_code: latestCandidate.candidate_code,
+      date_of_birth: formattedDate,
+      identity_card: latestCandidate.identity_card || '',
+      address: latestCandidate.address || '',
+      is_active: latestCandidate.is_active
     });
     setShowModal(true);
   };
@@ -808,7 +900,7 @@ const CandidatesPage = () => {
                       ) : (
                         users.map((user) => (
                           <option key={user.user_id} value={user.user_id}>
-                            {user.username} - {user.full_name} {user.role_name ? `(${user.role_name})` : ''}
+                            {user.username} - {user.full_name}
                           </option>
                         ))
                       )}
