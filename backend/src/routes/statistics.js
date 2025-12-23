@@ -18,6 +18,25 @@ router.get('/dashboard', statisticsController.getDashboardStats);
 // Danh sách báo cáo có sẵn
 router.get('/reports', statisticsController.getAvailableReports);
 
+// ====== NEW: Statistics for Admin Dashboard ======
+
+// Thống kê số khối bài chấm theo ngày
+router.get('/grading-by-day', statisticsController.getGradingByDay);
+
+// Thống kê số khối bài chấm theo tuần
+router.get('/grading-by-week', statisticsController.getGradingByWeek);
+
+// Thống kê điểm trung bình theo giám khảo
+router.get('/avg-score-by-examiner', statisticsController.getAvgScoreByExaminer);
+
+// Phân bố điểm tổng thể
+router.get('/score-distribution-overall', statisticsController.getScoreDistributionOverall);
+
+// Tiến độ chấm theo môn
+router.get('/grading-progress-by-subject', statisticsController.getGradingProgressBySubject);
+
+// ====== END NEW ======
+
 // Thống kê theo môn
 router.get('/subjects', statisticsController.getSubjectStats);
 

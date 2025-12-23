@@ -16,6 +16,35 @@ const statisticsApi = {
         return axios.get('/statistics/reports');
     },
 
+    // ====== NEW: APIs for Admin Dashboard ======
+
+    // Thống kê số khối bài chấm theo ngày
+    getGradingByDay: (params = {}) => {
+        return axios.get('/statistics/grading-by-day', { params });
+    },
+
+    // Thống kê số khối bài chấm theo tuần
+    getGradingByWeek: (params = {}) => {
+        return axios.get('/statistics/grading-by-week', { params });
+    },
+
+    // Thống kê điểm trung bình theo giám khảo
+    getAvgScoreByExaminer: (params = {}) => {
+        return axios.get('/statistics/avg-score-by-examiner', { params });
+    },
+
+    // Phân bố điểm tổng thể
+    getScoreDistributionOverall: () => {
+        return axios.get('/statistics/score-distribution-overall');
+    },
+
+    // Tiến độ chấm theo môn
+    getGradingProgressBySubject: () => {
+        return axios.get('/statistics/grading-progress-by-subject');
+    },
+
+    // ====== END NEW ======
+
     // Thống kê theo môn
     getSubjectStats: () => {
         return axios.get('/statistics/subjects');

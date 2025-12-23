@@ -1,0 +1,1046 @@
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { userApi } from '../../api/userApi';
+import statisticsApi from '../../api/statisticsApi';
+import LoadingSpinner from '../../components/ui/LoadingSpinner';
+import { useAuth } from '../../hooks/useAuth';
+
+// Simple Bar Chart Component
+const SimpleBarChart = ({ data, dataKey, labelKey, color = '#3b82f6', title }) => {
+  if (!data || data.length === 0) {
+    return (
+      <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
+        Chưa có dữ liệu
+      </div>
+    );
+  }
+
+  const maxValue = Math.max(...data.map(d => d[dataKey] || 0), 1);
+
+  return (
+    <div style={{ padding: '16px' }}>
+      {title && (
+        <h4 style={{ margin: '0 0 16px 0', fontSize: '14px', color: '#374151', fontWeight: '600' }}>
+          {title}
+        </h4>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {data.map((item, index) => (
+          <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ 
+              width: '80px', 
+              fontSize: '12px', 
+              color: '#6b7280',
+              textAlign: 'right',
+              flexShrink: 0
+            }}>
+              {item[labelKey]}
+            </div>
+            <div style={{ flex: 1, height: '24px', backgroundColor: '#e5e7eb', borderRadius: '4px', overflow: 'hidden' }}>
+              <div
+                style={{
+                  width: `${(item[dataKey] / maxValue) * 100}%`,
+                  height: '100%',
+                  backgroundColor: color,
+                  borderRadius: '4px',
+                  transition: 'width 0.5s ease',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'flex-end',
+                  paddingRight: '8px'
+                }}
+              >
+                <span style={{ fontSize: '11px', color: 'white', fontWeight: '500' }}>
+                  {item[dataKey]}
+                </span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Simple Line Chart Component for Daily Stats
+const SimpleDailyChart = ({ data, title }) => {
+  if (!data || data.length === 0) {
+    return (
+      <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
+        Chưa có dữ liệu
+      </div>
+    );
+  }
+
+  const maxValue = Math.max(...data.map(d => d.graded_count || 0), 1);
+  const chartHeight = 200;
+
+  return (
+    <div style={{ padding: '16px' }}>
+      {title && (
+        <h4 style={{ margin: '0 0 16px 0', fontSize: '14px', color: '#374151', fontWeight: '600' }}>
+          {title}
+        </h4>
+      )}
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', height: `${chartHeight}px` }}>
+        {data.map((item, index) => {
+          const height = (item.graded_count / maxValue) * (chartHeight - 40);
+          const dateStr = new Date(item.date).toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit' });
+          
+          return (
+            <div key={index} style={{ 
+              flex: 1, 
+              display: 'flex', 
+              flexDirection: 'column', 
+              alignItems: 'center',
+              gap: '4px'
+            }}>
+              <span style={{ fontSize: '11px', color: '#374151', fontWeight: '500' }}>
+                {item.graded_count}
+              </span>
+              <div
+                style={{
+                  width: '100%',
+                  maxWidth: '40px',
+                  height: `${Math.max(height, 4)}px`,
+                  backgroundColor: item.graded_count > 0 ? '#3b82f6' : '#e5e7eb',
+                  borderRadius: '4px 4px 0 0',
+                  transition: 'height 0.5s ease'
+                }}
+              />
+              <span style={{ fontSize: '10px', color: '#6b7280', textAlign: 'center' }}>
+                {dateStr}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// Score Distribution Pie Chart (Simple)
+const SimpleScoreDistribution = ({ data, title }) => {
+  if (!data || data.length === 0) {
+    return (
+      <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
+        Chưa có dữ liệu phân bố điểm
+      </div>
+    );
+  }
+
+  const colors = {
+    'A (9-10)': '#10b981',
+    'B (7-8.9)': '#3b82f6',
+    'C (5-6.9)': '#f59e0b',
+    'D (3-4.9)': '#f97316',
+    'F (0-2.9)': '#ef4444'
+  };
+
+  const total = data.reduce((sum, item) => sum + (item.count || 0), 0);
+
+  return (
+    <div style={{ padding: '16px' }}>
+      {title && (
+        <h4 style={{ margin: '0 0 16px 0', fontSize: '14px', color: '#374151', fontWeight: '600' }}>
+          {title}
+        </h4>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {data.map((item, index) => {
+          const percentage = total > 0 ? ((item.count / total) * 100).toFixed(1) : 0;
+          return (
+            <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ 
+                width: '12px', 
+                height: '12px', 
+                borderRadius: '2px',
+                backgroundColor: colors[item.grade_range] || '#6b7280'
+              }} />
+              <div style={{ width: '80px', fontSize: '13px', color: '#374151' }}>
+                {item.grade_range}
+              </div>
+              <div style={{ flex: 1, height: '20px', backgroundColor: '#e5e7eb', borderRadius: '4px', overflow: 'hidden' }}>
+                <div
+                  style={{
+                    width: `${percentage}%`,
+                    height: '100%',
+                    backgroundColor: colors[item.grade_range] || '#6b7280',
+                    borderRadius: '4px',
+                    transition: 'width 0.5s ease'
+                  }}
+                />
+              </div>
+              <div style={{ width: '60px', fontSize: '12px', color: '#6b7280', textAlign: 'right' }}>
+                {item.count} ({percentage}%)
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ marginTop: '12px', textAlign: 'center', fontSize: '13px', color: '#6b7280' }}>
+        Tổng: {total} bài thi
+      </div>
+    </div>
+  );
+};
+
+// Progress Bar Component
+const ProgressBar = ({ value, max = 100, color = '#3b82f6', label, showPercentage = true }) => {
+  const percentage = max > 0 ? Math.min((value / max) * 100, 100) : 0;
+  
+  return (
+    <div style={{ marginBottom: '12px' }}>
+      {label && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+          <span style={{ fontSize: '13px', color: '#374151' }}>{label}</span>
+          {showPercentage && (
+            <span style={{ fontSize: '13px', color: '#6b7280' }}>{percentage.toFixed(1)}%</span>
+          )}
+        </div>
+      )}
+      <div style={{
+        width: '100%',
+        height: '8px',
+        backgroundColor: '#e5e7eb',
+        borderRadius: '4px',
+        overflow: 'hidden'
+      }}>
+        <div style={{
+          width: `${percentage}%`,
+          height: '100%',
+          backgroundColor: color,
+          borderRadius: '4px',
+          transition: 'width 0.5s ease'
+        }} />
+      </div>
+    </div>
+  );
+};
+
+const Dashboard = () => {
+  const { user, isAdmin, isExaminer, isCandidate } = useAuth();
+  const [statistics, setStatistics] = useState(null);
+  const [gradingStats, setGradingStats] = useState(null);
+  const [gradingByDay, setGradingByDay] = useState([]);
+  const [avgScoreByExaminer, setAvgScoreByExaminer] = useState([]);
+  const [scoreDistribution, setScoreDistribution] = useState([]);
+  const [gradingProgressBySubject, setGradingProgressBySubject] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    // Chỉ load statistics cho Admin và Examiner
+    if (isAdmin || isExaminer) {
+      loadStatistics();
+    } else {
+      setLoading(false);
+    }
+  }, [isAdmin, isExaminer]);
+
+  const loadStatistics = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Load all statistics in parallel
+      const [
+        userResponse,
+        gradingResponse,
+        gradingByDayResponse,
+        avgScoreResponse,
+        scoreDistResponse,
+        progressBySubjectResponse
+      ] = await Promise.all([
+        userApi.getUserStatistics().catch(err => {
+          console.error('Error loading user stats:', err);
+          return { data: null };
+        }),
+        statisticsApi.getDashboardStats().catch(err => {
+          console.error('Error loading dashboard stats:', err);
+          return { data: null };
+        }),
+        statisticsApi.getGradingByDay({ days: 7 }).catch(err => {
+          console.error('Error loading grading by day:', err);
+          return { data: { data: [] } };
+        }),
+        statisticsApi.getAvgScoreByExaminer({ limit: 5 }).catch(err => {
+          console.error('Error loading avg score by examiner:', err);
+          return { data: { data: [] } };
+        }),
+        statisticsApi.getScoreDistributionOverall().catch(err => {
+          console.error('Error loading score distribution:', err);
+          return { data: { data: [] } };
+        }),
+        statisticsApi.getGradingProgressBySubject().catch(err => {
+          console.error('Error loading progress by subject:', err);
+          return { data: { data: [] } };
+        })
+      ]);
+
+      setStatistics(userResponse.data);
+      setGradingStats(gradingResponse.data?.data || gradingResponse.data);
+      setGradingByDay(gradingByDayResponse.data?.data || []);
+      setAvgScoreByExaminer(avgScoreResponse.data?.data || []);
+      setScoreDistribution(scoreDistResponse.data?.data || []);
+      setGradingProgressBySubject(progressBySubjectResponse.data?.data || []);
+
+    } catch (err) {
+      console.error('Dashboard load error:', err);
+      setError('Lỗi khi tải thống kê: ' + (err.message || 'Lỗi server khi lấy thông tin user'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return <LoadingSpinner />;
+  }
+
+  if (error && (isAdmin || isExaminer)) {
+    return (
+      <div style={{ padding: '20px', textAlign: 'center' }}>
+        <div style={{
+          backgroundColor: '#fee2e2',
+          color: '#dc2626',
+          padding: '16px',
+          borderRadius: '8px',
+          border: '1px solid #fecaca'
+        }}>
+          {error}
+        </div>
+        <button 
+          onClick={loadStatistics}
+          style={{
+            marginTop: '16px',
+            padding: '8px 16px',
+            backgroundColor: '#3b82f6',
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            cursor: 'pointer'
+          }}
+        >
+          Thử lại
+        </button>
+      </div>
+    );
+  }
+
+  // =============================================
+  // CANDIDATE DASHBOARD - Thí sinh
+  // =============================================
+  if (isCandidate) {
+    return (
+      <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
+        {/* Header */}
+        <div style={{ marginBottom: '24px' }}>
+          <h1 style={{ 
+            fontSize: '28px', 
+            fontWeight: 'bold', 
+            margin: '0 0 8px 0',
+            color: '#111827'
+          }}>
+            🎓 Xin chào, {user?.full_name || 'Thí sinh'}!
+          </h1>
+          <p style={{ 
+            color: '#6b7280', 
+            margin: 0,
+            fontSize: '16px'
+          }}>
+            Chào mừng bạn đến với hệ thống thi trực tuyến
+          </p>
+        </div>
+
+        {/* Welcome Card */}
+        <div style={{
+          backgroundColor: '#f0f9ff',
+          padding: '48px 32px',
+          borderRadius: '16px',
+          border: '1px solid #bae6fd',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '72px', marginBottom: '20px' }}>🚧</div>
+          <h2 style={{ 
+            fontSize: '24px', 
+            fontWeight: '600', 
+            color: '#0369a1',
+            margin: '0 0 16px 0'
+          }}>
+            Hệ thống đang được phát triển
+          </h2>
+          <p style={{ 
+            color: '#6b7280', 
+            fontSize: '16px',
+            maxWidth: '400px',
+            margin: '0 auto',
+            lineHeight: '1.6'
+          }}>
+            Vui lòng quay lại sau!
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // =============================================
+  // EXAMINER DASHBOARD - Cán bộ chấm thi  
+  // =============================================
+  if (isExaminer && !isAdmin) {
+    return (
+      <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
+        {/* Header */}
+        <div style={{ marginBottom: '24px' }}>
+          <h1 style={{ 
+            fontSize: '28px', 
+            fontWeight: 'bold', 
+            margin: '0 0 8px 0',
+            color: '#111827'
+          }}>
+            ✍️ Dashboard - Cán bộ chấm thi
+          </h1>
+          <p style={{ 
+            color: '#6b7280', 
+            margin: 0,
+            fontSize: '16px'
+          }}>
+            Xin chào, {user?.full_name || 'Giám khảo'}! Đây là tổng quan công việc chấm thi của bạn.
+          </p>
+        </div>
+
+        {/* Quick Stats */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: '16px',
+          marginBottom: '24px'
+        }}>
+          <div style={{
+            backgroundColor: '#fef3c7',
+            padding: '24px',
+            borderRadius: '12px',
+            textAlign: 'center',
+            border: '1px solid #fcd34d'
+          }}>
+            <div style={{ fontSize: '36px', fontWeight: 'bold', color: '#d97706' }}>
+              {gradingStats?.my_pending || 0}
+            </div>
+            <div style={{ fontSize: '14px', color: '#92400e', marginTop: '4px' }}>
+              🕐 Bài chờ chấm
+            </div>
+          </div>
+
+          <div style={{
+            backgroundColor: '#dbeafe',
+            padding: '24px',
+            borderRadius: '12px',
+            textAlign: 'center',
+            border: '1px solid #93c5fd'
+          }}>
+            <div style={{ fontSize: '36px', fontWeight: 'bold', color: '#2563eb' }}>
+              {gradingStats?.my_in_progress || 0}
+            </div>
+            <div style={{ fontSize: '14px', color: '#1e40af', marginTop: '4px' }}>
+              ⏳ Đang chấm
+            </div>
+          </div>
+
+          <div style={{
+            backgroundColor: '#d1fae5',
+            padding: '24px',
+            borderRadius: '12px',
+            textAlign: 'center',
+            border: '1px solid #6ee7b7'
+          }}>
+            <div style={{ fontSize: '36px', fontWeight: 'bold', color: '#059669' }}>
+              {gradingStats?.my_completed || 0}
+            </div>
+            <div style={{ fontSize: '14px', color: '#065f46', marginTop: '4px' }}>
+              ✅ Đã hoàn thành
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div style={{
+          backgroundColor: 'white',
+          padding: '24px',
+          borderRadius: '12px',
+          border: '1px solid #e5e7eb',
+          marginBottom: '24px'
+        }}>
+          <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', color: '#111827' }}>
+            ⚡ Thao tác nhanh
+          </h3>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <Link
+              to="/examiner/grading"
+              style={{
+                padding: '12px 24px',
+                backgroundColor: '#3b82f6',
+                color: 'white',
+                borderRadius: '8px',
+                textDecoration: 'none',
+                fontSize: '15px',
+                fontWeight: '500',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              ✍️ Chấm bài tự luận
+            </Link>
+          </div>
+        </div>
+
+        {/* Info Section */}
+        <div style={{
+          backgroundColor: '#f0f9ff',
+          padding: '24px',
+          borderRadius: '12px',
+          border: '1px solid #bae6fd'
+        }}>
+          <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#0369a1' }}>
+            📋 Hướng dẫn chấm bài
+          </h3>
+          <ul style={{ margin: 0, paddingLeft: '20px', color: '#374151', lineHeight: '1.8' }}>
+            <li>Nhấn "Chấm bài tự luận" để xem danh sách bài được phân công</li>
+            <li>Chấm điểm theo thang điểm và đáp án mẫu có sẵn</li>
+            <li>Thêm nhận xét chi tiết cho từng câu hỏi</li>
+            <li>Hoàn thành chấm tất cả bài được giao đúng hạn</li>
+          </ul>
+        </div>
+      </div>
+    );
+  }
+
+  // =============================================
+  // ADMIN DASHBOARD - Quản trị viên (code cũ)
+  // =============================================
+  
+  // Calculate totals for grading overview
+  const totalPending = gradingStats?.pending_count || gradingStats?.grading?.pending_assignments || 0;
+  const totalInProgress = gradingStats?.in_progress_count || gradingStats?.grading?.in_progress || 0;
+  const totalCompleted = gradingStats?.graded_count || gradingStats?.grading?.completed || 0;
+  const totalAssignments = gradingStats?.grading?.total_assignments || (totalPending + totalInProgress + totalCompleted);
+  const gradingProgress = totalAssignments > 0 
+    ? Math.round((totalCompleted / totalAssignments) * 100) 
+    : 0;
+
+  return (
+    <div style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{ marginBottom: '24px' }}>
+        <h1 style={{ 
+          fontSize: '28px', 
+          fontWeight: 'bold', 
+          margin: '0 0 8px 0',
+          color: '#111827'
+        }}>
+          📊 Dashboard - Tổng quan chấm thi
+        </h1>
+        <p style={{ 
+          color: '#6b7280', 
+          margin: 0,
+          fontSize: '16px'
+        }}>
+          Xin chào, {user?.full_name || 'Admin'}! Đây là tổng quan công việc chấm thi.
+        </p>
+      </div>
+
+      {/* ========== SECTION 1: Tổng quan số liệu chấm thi ========== */}
+      <div style={{
+        marginBottom: '24px',
+        backgroundColor: '#f0f9ff',
+        padding: '24px',
+        borderRadius: '12px',
+        border: '1px solid #bae6fd'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <h2 style={{
+            fontSize: '18px',
+            fontWeight: '600',
+            color: '#0369a1',
+            margin: 0
+          }}>
+            📋 Tổng quan khối bài thi
+          </h2>
+          <Link 
+            to="/admin/statistics"
+            style={{
+              color: '#0369a1',
+              fontSize: '14px',
+              textDecoration: 'none',
+              fontWeight: '500'
+            }}
+          >
+            Xem chi tiết →
+          </Link>
+        </div>
+
+        {/* Statistics Cards */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+          gap: '16px',
+          marginBottom: '24px'
+        }}>
+          {/* Chờ chấm */}
+          <div style={{
+            backgroundColor: 'white',
+            padding: '20px',
+            borderRadius: '12px',
+            textAlign: 'center',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+            borderLeft: '4px solid #f59e0b'
+          }}>
+            <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#f59e0b' }}>
+              {totalPending}
+            </div>
+            <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '4px' }}>
+              🕐 Chờ chấm
+            </div>
+          </div>
+
+          {/* Đang chấm */}
+          <div style={{
+            backgroundColor: 'white',
+            padding: '20px',
+            borderRadius: '12px',
+            textAlign: 'center',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+            borderLeft: '4px solid #3b82f6'
+          }}>
+            <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#3b82f6' }}>
+              {totalInProgress}
+            </div>
+            <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '4px' }}>
+              ⏳ Đang chấm
+            </div>
+          </div>
+
+          {/* Đã hoàn thành */}
+          <div style={{
+            backgroundColor: 'white',
+            padding: '20px',
+            borderRadius: '12px',
+            textAlign: 'center',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+            borderLeft: '4px solid #10b981'
+          }}>
+            <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#10b981' }}>
+              {totalCompleted}
+            </div>
+            <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '4px' }}>
+              ✅ Đã hoàn thành
+            </div>
+          </div>
+
+          {/* Tổng số */}
+          <div style={{
+            backgroundColor: 'white',
+            padding: '20px',
+            borderRadius: '12px',
+            textAlign: 'center',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+            borderLeft: '4px solid #8b5cf6'
+          }}>
+            <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#8b5cf6' }}>
+              {totalAssignments}
+            </div>
+            <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '4px' }}>
+              📊 Tổng số khối
+            </div>
+          </div>
+        </div>
+
+        {/* ========== SECTION 2: Thanh tiến độ tổng thể ========== */}
+        <div style={{
+          backgroundColor: 'white',
+          padding: '20px',
+          borderRadius: '12px',
+          marginBottom: '16px'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <h3 style={{ margin: 0, fontSize: '16px', color: '#374151', fontWeight: '600' }}>
+              📈 Mức độ hoàn thành công việc chấm thi
+            </h3>
+            <span style={{ 
+              fontSize: '24px', 
+              fontWeight: 'bold', 
+              color: gradingProgress >= 80 ? '#10b981' : gradingProgress >= 50 ? '#f59e0b' : '#ef4444'
+            }}>
+              {gradingProgress}%
+            </span>
+          </div>
+          <div style={{
+            width: '100%',
+            height: '24px',
+            backgroundColor: '#e5e7eb',
+            borderRadius: '12px',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              width: `${gradingProgress}%`,
+              height: '100%',
+              background: gradingProgress >= 80 
+                ? 'linear-gradient(90deg, #10b981, #059669)' 
+                : gradingProgress >= 50 
+                  ? 'linear-gradient(90deg, #f59e0b, #d97706)'
+                  : 'linear-gradient(90deg, #ef4444, #dc2626)',
+              borderRadius: '12px',
+              transition: 'width 0.5s ease'
+            }} />
+          </div>
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            marginTop: '8px',
+            fontSize: '12px',
+            color: '#6b7280'
+          }}>
+            <span>0%</span>
+            <span>Đã chấm: {totalCompleted}/{totalAssignments} khối</span>
+            <span>100%</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ========== SECTION 3: Biểu đồ thống kê ========== */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
+        gap: '24px',
+        marginBottom: '24px'
+      }}>
+        {/* Biểu đồ số khối đã chấm theo ngày */}
+        <div style={{
+          backgroundColor: 'white',
+          padding: '20px',
+          borderRadius: '12px',
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+          border: '1px solid #e5e7eb'
+        }}>
+          <h3 style={{ 
+            margin: '0 0 16px 0', 
+            fontSize: '16px', 
+            color: '#111827',
+            fontWeight: '600',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            📅 Số khối bài đã chấm theo ngày (7 ngày gần nhất)
+          </h3>
+          <SimpleDailyChart data={gradingByDay} />
+        </div>
+
+        {/* Biểu đồ phân bố điểm */}
+        <div style={{
+          backgroundColor: 'white',
+          padding: '20px',
+          borderRadius: '12px',
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+          border: '1px solid #e5e7eb'
+        }}>
+          <h3 style={{ 
+            margin: '0 0 16px 0', 
+            fontSize: '16px', 
+            color: '#111827',
+            fontWeight: '600',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            🎯 Phân bố điểm trung bình các bài thi
+          </h3>
+          <SimpleScoreDistribution data={scoreDistribution} />
+        </div>
+      </div>
+
+      {/* ========== SECTION 4: Thống kê theo giám khảo ========== */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
+        gap: '24px',
+        marginBottom: '24px'
+      }}>
+        {/* Điểm trung bình theo giám khảo */}
+        <div style={{
+          backgroundColor: 'white',
+          padding: '20px',
+          borderRadius: '12px',
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+          border: '1px solid #e5e7eb'
+        }}>
+          <h3 style={{ 
+            margin: '0 0 16px 0', 
+            fontSize: '16px', 
+            color: '#111827',
+            fontWeight: '600',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            👨‍🏫 Điểm trung bình theo giám khảo (Top 5)
+          </h3>
+          {avgScoreByExaminer.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {avgScoreByExaminer.map((examiner, index) => (
+                <div key={index} style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '12px',
+                  backgroundColor: '#f9fafb',
+                  borderRadius: '8px',
+                  gap: '12px'
+                }}>
+                  <div style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '50%',
+                    backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'][index],
+                    color: 'white',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 'bold',
+                    fontSize: '14px'
+                  }}>
+                    {index + 1}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: '500', color: '#111827', fontSize: '14px' }}>
+                      {examiner.examiner_name}
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                      {examiner.total_graded} bài đã chấm
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ 
+                      fontWeight: 'bold', 
+                      fontSize: '18px',
+                      color: parseFloat(examiner.avg_score) >= 7 ? '#10b981' : parseFloat(examiner.avg_score) >= 5 ? '#f59e0b' : '#ef4444'
+                    }}>
+                      {parseFloat(examiner.avg_score || 0).toFixed(2)}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#6b7280' }}>
+                      Điểm TB
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
+              Chưa có dữ liệu giám khảo
+            </div>
+          )}
+        </div>
+
+        {/* Tiến độ chấm theo môn */}
+        <div style={{
+          backgroundColor: 'white',
+          padding: '20px',
+          borderRadius: '12px',
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+          border: '1px solid #e5e7eb'
+        }}>
+          <h3 style={{ 
+            margin: '0 0 16px 0', 
+            fontSize: '16px', 
+            color: '#111827',
+            fontWeight: '600',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            📚 Tiến độ chấm theo môn thi
+          </h3>
+          {gradingProgressBySubject.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {gradingProgressBySubject.map((subject, index) => (
+                <div key={index}>
+                  <div style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center',
+                    marginBottom: '6px'
+                  }}>
+                    <span style={{ fontSize: '14px', color: '#374151', fontWeight: '500' }}>
+                      {subject.subject_name}
+                    </span>
+                    <span style={{ fontSize: '13px', color: '#6b7280' }}>
+                      {subject.completed || 0}/{subject.total_assignments || 0} ({subject.progress_percent || 0}%)
+                    </span>
+                  </div>
+                  <div style={{
+                    width: '100%',
+                    height: '10px',
+                    backgroundColor: '#e5e7eb',
+                    borderRadius: '5px',
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{
+                      width: `${subject.progress_percent || 0}%`,
+                      height: '100%',
+                      backgroundColor: parseFloat(subject.progress_percent) >= 80 ? '#10b981' : parseFloat(subject.progress_percent) >= 50 ? '#3b82f6' : '#f59e0b',
+                      borderRadius: '5px',
+                      transition: 'width 0.5s ease'
+                    }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
+              Chưa có dữ liệu tiến độ theo môn
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ========== SECTION 5: Quick Actions ========== */}
+      <div style={{
+        backgroundColor: 'white',
+        padding: '20px',
+        borderRadius: '12px',
+        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+        border: '1px solid #e5e7eb'
+      }}>
+        <h3 style={{ 
+          margin: '0 0 16px 0', 
+          fontSize: '16px', 
+          color: '#111827',
+          fontWeight: '600'
+        }}>
+          ⚡ Thao tác nhanh
+        </h3>
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          <Link
+            to="/admin/grading/assignments"
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#3b82f6',
+              color: 'white',
+              borderRadius: '8px',
+              textDecoration: 'none',
+              fontSize: '14px',
+              fontWeight: '500',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            📋 Quản lý phân công
+          </Link>
+          <Link
+            to="/admin/grading/comparison"
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#10b981',
+              color: 'white',
+              borderRadius: '8px',
+              textDecoration: 'none',
+              fontSize: '14px',
+              fontWeight: '500',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            🔍 So sánh kết quả chấm
+          </Link>
+          <Link
+            to="/admin/statistics"
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#8b5cf6',
+              color: 'white',
+              borderRadius: '8px',
+              textDecoration: 'none',
+              fontSize: '14px',
+              fontWeight: '500',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            📊 Báo cáo thống kê
+          </Link>
+          <Link
+            to="/admin/exam-essays"
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#f59e0b',
+              color: 'white',
+              borderRadius: '8px',
+              textDecoration: 'none',
+              fontSize: '14px',
+              fontWeight: '500',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            📝 Quản lý đề thi
+          </Link>
+        </div>
+      </div>
+
+      {/* ========== SECTION 6: Thống kê người dùng (nếu có) ========== */}
+      {statistics && (
+        <div style={{
+          marginTop: '24px',
+          backgroundColor: 'white',
+          padding: '20px',
+          borderRadius: '12px',
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+          border: '1px solid #e5e7eb'
+        }}>
+          <h3 style={{ 
+            margin: '0 0 16px 0', 
+            fontSize: '16px', 
+            color: '#111827',
+            fontWeight: '600'
+          }}>
+            👥 Thống kê người dùng hệ thống
+          </h3>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+            gap: '16px'
+          }}>
+            <div style={{ padding: '16px', backgroundColor: '#f0f9ff', borderRadius: '8px', textAlign: 'center' }}>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#0369a1' }}>
+                {statistics.total_users || 0}
+              </div>
+              <div style={{ fontSize: '13px', color: '#6b7280' }}>Tổng người dùng</div>
+            </div>
+            <div style={{ padding: '16px', backgroundColor: '#f0fdf4', borderRadius: '8px', textAlign: 'center' }}>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#16a34a' }}>
+                {statistics.active_users || 0}
+              </div>
+              <div style={{ fontSize: '13px', color: '#6b7280' }}>Đang hoạt động</div>
+            </div>
+            <div style={{ padding: '16px', backgroundColor: '#fef3c7', borderRadius: '8px', textAlign: 'center' }}>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#d97706' }}>
+                {gradingStats?.users?.examiner_count || 0}
+              </div>
+              <div style={{ fontSize: '13px', color: '#6b7280' }}>Giám khảo</div>
+            </div>
+            <div style={{ padding: '16px', backgroundColor: '#fce7f3', borderRadius: '8px', textAlign: 'center' }}>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#db2777' }}>
+                {gradingStats?.users?.candidate_count || 0}
+              </div>
+              <div style={{ fontSize: '13px', color: '#6b7280' }}>Thí sinh</div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Dashboard;

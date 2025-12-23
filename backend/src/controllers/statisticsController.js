@@ -28,6 +28,125 @@ async function getDashboardStats(req, res) {
 }
 
 /**
+ * GET /api/statistics/grading-by-day
+ * Lấy thống kê số khối bài đã chấm theo ngày
+ */
+async function getGradingByDay(req, res) {
+    try {
+        const { days } = req.query;
+        const data = await Statistics.getGradingByDay({
+            days: days ? parseInt(days) : 7
+        });
+
+        res.json({
+            success: true,
+            data
+        });
+    } catch (error) {
+        console.error('Error getting grading by day:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Lỗi khi lấy thống kê chấm theo ngày',
+            error: error.message
+        });
+    }
+}
+
+/**
+ * GET /api/statistics/grading-by-week
+ * Lấy thống kê số khối bài đã chấm theo tuần
+ */
+async function getGradingByWeek(req, res) {
+    try {
+        const { weeks } = req.query;
+        const data = await Statistics.getGradingByWeek({
+            weeks: weeks ? parseInt(weeks) : 4
+        });
+
+        res.json({
+            success: true,
+            data
+        });
+    } catch (error) {
+        console.error('Error getting grading by week:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Lỗi khi lấy thống kê chấm theo tuần',
+            error: error.message
+        });
+    }
+}
+
+/**
+ * GET /api/statistics/avg-score-by-examiner
+ * Lấy thống kê điểm trung bình theo giám khảo
+ */
+async function getAvgScoreByExaminer(req, res) {
+    try {
+        const { limit } = req.query;
+        const data = await Statistics.getAvgScoreByExaminer({
+            limit: limit ? parseInt(limit) : 10
+        });
+
+        res.json({
+            success: true,
+            data
+        });
+    } catch (error) {
+        console.error('Error getting avg score by examiner:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Lỗi khi lấy thống kê điểm theo giám khảo',
+            error: error.message
+        });
+    }
+}
+
+/**
+ * GET /api/statistics/score-distribution-overall
+ * Lấy thống kê phân bố điểm tổng thể
+ */
+async function getScoreDistributionOverall(req, res) {
+    try {
+        const data = await Statistics.getScoreDistributionOverall();
+
+        res.json({
+            success: true,
+            data
+        });
+    } catch (error) {
+        console.error('Error getting score distribution:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Lỗi khi lấy phân bố điểm',
+            error: error.message
+        });
+    }
+}
+
+/**
+ * GET /api/statistics/grading-progress-by-subject
+ * Lấy thống kê tiến độ chấm theo môn
+ */
+async function getGradingProgressBySubject(req, res) {
+    try {
+        const data = await Statistics.getGradingProgressBySubject();
+
+        res.json({
+            success: true,
+            data
+        });
+    } catch (error) {
+        console.error('Error getting grading progress by subject:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Lỗi khi lấy tiến độ chấm theo môn',
+            error: error.message
+        });
+    }
+}
+
+/**
  * GET /api/statistics/subjects
  * Lấy thống kê theo môn thi
  */
@@ -362,5 +481,11 @@ module.exports = {
     getMismatchedGradings,
     getTimeBasedStats,
     exportScores,
-    getAvailableReports
+    getAvailableReports,
+    // New endpoints for Admin Dashboard
+    getGradingByDay,
+    getGradingByWeek,
+    getAvgScoreByExaminer,
+    getScoreDistributionOverall,
+    getGradingProgressBySubject
 };

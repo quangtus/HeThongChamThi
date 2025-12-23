@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { userApi } from '../../api/adminApi';
 import axios from 'axios';
 import Alert from '../../components/ui/Alert';
-import '../../styles/admin.css';
 
 const UsersPage = () => {
   const [users, setUsers] = useState([]);
@@ -27,19 +26,15 @@ const UsersPage = () => {
     is_active: true
   });
 
-  // Debounce search term - chỉ gọi API sau khi người dùng ngừng gõ 500ms
+  // Debounce search term
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
-      setCurrentPage(1); // Reset về trang 1 khi tìm kiếm
+      setCurrentPage(1);
     }, 500);
-
-    return () => {
-      clearTimeout(timer);
-    };
+    return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  // Load users and roles when component mounts
   useEffect(() => {
     loadUsers();
   }, [currentPage, debouncedSearchTerm, itemsPerPage, selectedRole]);
@@ -74,7 +69,6 @@ const UsersPage = () => {
 
   const handleSearch = (e) => {
     setSearchTerm(e.target.value);
-    // Không reset currentPage ở đây nữa vì đã xử lý trong debounce effect
   };
 
   const handleRoleFilterChange = (e) => {
@@ -92,9 +86,6 @@ const UsersPage = () => {
       
       if (response.data.success) {
         setRoles(response.data.data);
-        console.log('Roles loaded:', response.data.data);
-      } else {
-        console.error('Lỗi khi tải danh sách roles:', response.data.message);
       }
     } catch (error) {
       console.error('Lỗi khi tải danh sách roles:', error);
@@ -112,7 +103,6 @@ const UsersPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      // Validate and convert role_id to integer
       const roleId = parseInt(formData.role_id);
       if (isNaN(roleId) || roleId < 1) {
         setAlert({ show: true, type: 'error', message: 'Vui lòng chọn vai trò hợp lệ' });
@@ -124,19 +114,14 @@ const UsersPage = () => {
         role_id: roleId
       };
       
-      // Nếu đang edit và password để trống, không gửi password lên backend
       if (editingUser && (!submitData.password || submitData.password.trim() === '')) {
         delete submitData.password;
       }
       
-      console.log('📤 Sending user data:', submitData);
-      
       let response;
       if (editingUser) {
-        // Update existing user
         response = await userApi.updateUser(editingUser.user_id, submitData);
       } else {
-        // Create new user
         response = await userApi.createUser(submitData);
       }
       
@@ -150,7 +135,6 @@ const UsersPage = () => {
         setAlert({ show: true, type: 'error', message: 'Lỗi: ' + response.message });
       }
     } catch (error) {
-      console.error('Lỗi khi lưu user:', error);
       const errorMessage = error.response?.data?.message || error.message;
       const errorDetails = error.response?.data?.errors?.[0]?.msg;
       setAlert({ show: true, type: 'error', message: `Lỗi: ${errorDetails || errorMessage}` });
@@ -161,7 +145,7 @@ const UsersPage = () => {
     setEditingUser(user);
     setFormData({
       username: user.username,
-      password: '', // Don't pre-fill password for security
+      password: '',
       full_name: user.full_name,
       email: user.email,
       phone: user.phone || '',
@@ -187,7 +171,6 @@ const UsersPage = () => {
           setAlert({ show: true, type: 'error', message: 'Lỗi: ' + response.message });
         }
       } catch (error) {
-        console.error('Lỗi khi xóa user:', error);
         setAlert({ show: true, type: 'error', message: `Lỗi: ${error.response?.data?.message || error.message}` });
       }
     }
@@ -225,13 +208,65 @@ const UsersPage = () => {
         setAlert({ show: true, type: 'error', message: 'Lỗi: ' + response.message });
       }
     } catch (error) {
-      console.error('Lỗi khi thay đổi trạng thái user:', error);
       setAlert({ show: true, type: 'error', message: `Lỗi: ${error.response?.data?.message || error.message}` });
     }
   };
 
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+    if (!['.xlsx', '.xls', '.csv'].includes(fileExtension)) {
+      setAlert({ show: true, type: 'error', message: 'Định dạng file không hợp lệ. Vui lòng chọn file .xlsx, .xls hoặc .csv' });
+      e.target.value = '';
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const res = await userApi.importUsers(file);
+      
+      if (res.data && res.data.errors && res.data.errors.length > 0) {
+        const errorCount = res.data.failed || 0;
+        const successCount = res.data.success || 0;
+        const errorDetails = res.data.errors.slice(0, 5).map(err => 
+          `Dòng ${err.row}: ${err.message}`
+        ).join('\n');
+        
+        setAlert({ 
+          show: true, 
+          type: 'error', 
+          message: `Import hoàn tất: ${successCount} thành công, ${errorCount} lỗi.\n\nChi tiết lỗi:\n${errorDetails}${res.data.errors.length > 5 ? '\n...' : ''}` 
+        });
+      } else {
+        setAlert({ show: true, type: 'success', message: res.message || 'Import thành công' });
+      }
+      loadUsers();
+    } catch (error) {
+      const data = error.response?.data;
+      let errorMessage = 'Import lỗi: ';
+      
+      if (data?.data?.errors && data.data.errors.length > 0) {
+        const errorCount = data.data.failed || 0;
+        const successCount = data.data.success || 0;
+        const errorDetails = data.data.errors.slice(0, 5).map(err => 
+          `Dòng ${err.row}: ${err.message}`
+        ).join('\n');
+        errorMessage = `Import hoàn tất: ${successCount} thành công, ${errorCount} lỗi.\n\nChi tiết lỗi:\n${errorDetails}${data.data.errors.length > 5 ? '\n...' : ''}`;
+      } else {
+        errorMessage += data?.errors?.[0]?.msg || data?.message || error.message;
+      }
+      
+      setAlert({ show: true, type: 'error', message: errorMessage });
+    } finally {
+      setLoading(false);
+      e.target.value = '';
+    }
+  };
+
   return (
-    <div className="admin-container">
+    <div className="max-w-7xl mx-auto p-6 bg-gray-50 min-h-screen">
       <Alert 
         type={alert.type}
         message={alert.message}
@@ -242,168 +277,132 @@ const UsersPage = () => {
         onClose={() => setAlert({ show: false, type: 'error', message: '' })}
       />
       
-      <div className="admin-header">
-        <h1 className="admin-title">Quản lý người dùng</h1>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <input type="file" id="userImport" accept=".xlsx,.xls,.csv" style={{ display: 'none' }}
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              
-              // Validate file type
-              const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
-              if (!['.xlsx', '.xls', '.csv'].includes(fileExtension)) {
-                setAlert({ show: true, type: 'error', message: 'Định dạng file không hợp lệ. Vui lòng chọn file .xlsx, .xls hoặc .csv' });
-                e.target.value = '';
-                return;
-              }
-
-              try {
-                setLoading(true);
-                const res = await userApi.importUsers(file);
-                
-                // Check if there are errors in the response
-                if (res.data && res.data.errors && res.data.errors.length > 0) {
-                  const errorCount = res.data.failed || 0;
-                  const successCount = res.data.success || 0;
-                  const errorDetails = res.data.errors.slice(0, 5).map(err => 
-                    `Dòng ${err.row}: ${err.message}`
-                  ).join('\n');
-                  
-                  setAlert({ 
-                    show: true, 
-                    type: 'error', 
-                    message: `Import hoàn tất: ${successCount} thành công, ${errorCount} lỗi.\n\nChi tiết lỗi:\n${errorDetails}${res.data.errors.length > 5 ? '\n...' : ''}` 
-                  });
-                } else {
-                  setAlert({ show: true, type: 'success', message: res.message || 'Import thành công' });
-                }
-                loadUsers();
-              } catch (error) {
-                const data = error.response?.data;
-                let errorMessage = 'Import lỗi: ';
-                
-                if (data?.data?.errors && data.data.errors.length > 0) {
-                  // Backend returned detailed errors
-                  const errorCount = data.data.failed || 0;
-                  const successCount = data.data.success || 0;
-                  const errorDetails = data.data.errors.slice(0, 5).map(err => 
-                    `Dòng ${err.row}: ${err.message}`
-                  ).join('\n');
-                  errorMessage = `Import hoàn tất: ${successCount} thành công, ${errorCount} lỗi.\n\nChi tiết lỗi:\n${errorDetails}${data.data.errors.length > 5 ? '\n...' : ''}`;
-                } else {
-                  errorMessage += data?.errors?.[0]?.msg || data?.message || error.message;
-                }
-                
-                setAlert({ show: true, type: 'error', message: errorMessage });
-              } finally {
-                setLoading(false);
-                e.target.value = '';
-              }
-            }} />
-          <button className="admin-btn admin-btn-submit" onClick={() => document.getElementById('userImport').click()}>Import Excel/CSV</button>
+      {/* Header */}
+      <div className="flex justify-between items-center mb-8 p-6 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-xl shadow-lg">
+        <h1 className="text-2xl font-bold text-white">Quản lý người dùng</h1>
+        <div className="flex gap-2">
+          <input 
+            type="file" 
+            id="userImport" 
+            accept=".xlsx,.xls,.csv" 
+            className="hidden"
+            onChange={handleImportFile} 
+          />
+          <button 
+            className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg font-medium transition"
+            onClick={() => document.getElementById('userImport').click()}
+          >
+            Import Excel/CSV
+          </button>
           <button
             onClick={handleAddNew}
-            className="admin-add-btn"
+            className="px-6 py-2 bg-gradient-to-r from-cyan-400 to-cyan-500 hover:from-cyan-500 hover:to-cyan-600 text-white rounded-lg font-semibold shadow-md hover:shadow-lg transition transform hover:-translate-y-0.5"
           >
             + Thêm User
           </button>
         </div>
       </div>
 
-      {/* Search bar */}
-      <div className="admin-search">
+      {/* Search & Filters */}
+      <div className="mb-6 p-4 bg-white rounded-xl shadow-sm border border-gray-200">
         <input
           type="text"
           placeholder="Tìm kiếm users..."
           value={searchTerm}
           onChange={handleSearch}
-          className="admin-search-input"
+          className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition"
         />
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px', flexWrap: 'wrap' }}>
-          <label style={{ fontSize: '14px' }}>Lọc vai trò:</label>
-          <select
-            value={selectedRole}
-            onChange={handleRoleFilterChange}
-            className="admin-form-select"
-            style={{ width: 'auto', padding: '4px 8px' }}
-          >
-            <option value="">Tất cả</option>
-            {roles.map(role => (
-              <option key={role.role_id} value={String(role.role_id)}>
-                {role.role_name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px' }}>
-          <label style={{ fontSize: '14px' }}>Hiển thị:</label>
-          <select
-            value={itemsPerPage}
-            onChange={(e) => {
-              setItemsPerPage(Number(e.target.value));
-              setCurrentPage(1);
-            }}
-            className="admin-form-select"
-            style={{ width: 'auto', padding: '4px 8px' }}
-          >
-            <option value={10}>10</option>
-            <option value={50}>50</option>
-            <option value={100}>100</option>
-          </select>
-          <span style={{ fontSize: '14px', color: '#666' }}>mục/trang</span>
+        <div className="flex flex-wrap gap-4 items-center mt-4">
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-600">Lọc vai trò:</label>
+            <select
+              value={selectedRole}
+              onChange={handleRoleFilterChange}
+              className="px-3 py-2 border border-gray-200 rounded-lg focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none"
+            >
+              <option value="">Tất cả</option>
+              {roles.map(role => (
+                <option key={role.role_id} value={String(role.role_id)}>
+                  {role.role_name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-600">Hiển thị:</label>
+            <select
+              value={itemsPerPage}
+              onChange={(e) => {
+                setItemsPerPage(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="px-3 py-2 border border-gray-200 rounded-lg focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none"
+            >
+              <option value={10}>10</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+            <span className="text-sm text-gray-500">mục/trang</span>
+          </div>
         </div>
       </div>
 
+      {/* Table */}
       {loading ? (
-        <div className="admin-loading">
-          <div className="admin-spinner"></div>
+        <div className="flex items-center justify-center gap-3 p-12 text-gray-500">
+          <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
           Đang tải...
         </div>
       ) : (
-        <div className="admin-table-container">
-          <table className="admin-table">
-            <thead>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-gray-50">
               <tr>
-                <th>ID</th>
-                <th>Username</th>
-                <th>Họ tên</th>
-                <th>Email</th>
-                <th>Vai trò</th>
-                <th>Trạng thái</th>
-                <th>Thao tác</th>
+                <th className="px-4 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider border-b-2 border-gray-200">ID</th>
+                <th className="px-4 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider border-b-2 border-gray-200">Username</th>
+                <th className="px-4 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider border-b-2 border-gray-200">Họ tên</th>
+                <th className="px-4 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider border-b-2 border-gray-200">Email</th>
+                <th className="px-4 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider border-b-2 border-gray-200">Vai trò</th>
+                <th className="px-4 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider border-b-2 border-gray-200">Trạng thái</th>
+                <th className="px-4 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider border-b-2 border-gray-200">Thao tác</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-gray-100">
               {users.map((user) => (
-                <tr key={user.user_id}>
-                  <td><span className="admin-code">{user.user_id}</span></td>
-                  <td>{user.username}</td>
-                  <td>{user.full_name}</td>
-                  <td>{user.email}</td>
-                  <td>{user.role_name}</td>
-                  <td>
-                    <span className={`status-badge ${user.is_active ? 'status-active' : 'status-inactive'}`}>
+                <tr key={user.user_id} className="hover:bg-gray-50 transition">
+                  <td className="px-4 py-4">
+                    <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded font-mono text-sm">{user.user_id}</span>
+                  </td>
+                  <td className="px-4 py-4 text-gray-700">{user.username}</td>
+                  <td className="px-4 py-4 text-gray-700">{user.full_name}</td>
+                  <td className="px-4 py-4 text-gray-700">{user.email}</td>
+                  <td className="px-4 py-4 text-gray-700">{user.role_name}</td>
+                  <td className="px-4 py-4">
+                    <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${
+                      user.is_active 
+                        ? 'bg-emerald-100 text-emerald-700' 
+                        : 'bg-red-100 text-red-700'
+                    }`}>
                       {user.is_active ? 'Hoạt động' : 'Bị khóa'}
                     </span>
                   </td>
-                  <td>
-                    <div className="admin-actions">
+                  <td className="px-4 py-4">
+                    <div className="flex gap-2">
                       <button 
                         onClick={() => handleEdit(user)}
-                        className="admin-btn admin-btn-edit"
+                        className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition"
                       >
                         Sửa
                       </button>
                       <button 
                         onClick={() => handleToggleStatus(user)}
-                        className="admin-btn admin-btn-toggle"
+                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg transition"
                       >
                         {user.is_active ? 'Khóa' : 'Mở'}
                       </button>
                       <button 
                         onClick={() => handleDelete(user)}
-                        className="admin-btn admin-btn-delete"
+                        className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-sm font-medium rounded-lg transition"
                       >
                         Xóa
                       </button>
@@ -418,37 +417,37 @@ const UsersPage = () => {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="admin-pagination">
+        <div className="flex items-center justify-center gap-4 mt-6">
           <button
             onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
             disabled={currentPage === 1}
-            className="admin-pagination-btn"
+            className="px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
             Trước
           </button>
-          <span className="admin-pagination-info">
+          <span className="text-sm text-gray-600">
             Trang {currentPage} / {totalPages}
           </span>
           <button
             onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
             disabled={currentPage === totalPages}
-            className="admin-pagination-btn"
+            className="px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
             Sau
           </button>
         </div>
       )}
 
+      {/* Modal */}
       {showModal && (
-        <div className="admin-modal-overlay">
-          <div className="admin-modal">
-            <div className="admin-modal-header">
-              <h2 className="admin-modal-title">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden">
+            <div className="p-6 bg-gradient-to-r from-indigo-500 to-purple-600">
+              <h2 className="text-xl font-bold text-white">
                 {editingUser ? 'Sửa thông tin User' : 'Thêm User Mới'}
               </h2>
             </div>
             
-            {/* Alert bên trong modal */}
             <div className="px-6 pt-4">
               <Alert 
                 type={alert.type}
@@ -460,75 +459,75 @@ const UsersPage = () => {
               />
             </div>
             
-            <div className="admin-modal-body">
-              <form onSubmit={handleSubmit} className="admin-form">
-                <div className="admin-form-group">
-                  <label className="admin-form-label">Username:</label>
+            <div className="p-6 max-h-[60vh] overflow-y-auto">
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Username:</label>
                   <input
                     type="text"
                     name="username"
                     value={formData.username}
                     onChange={handleInputChange}
-                    className="admin-form-input"
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition"
                     required
                   />
                 </div>
                 
-                <div className="admin-form-group">
-                  <label className="admin-form-label">Password:</label>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Password:</label>
                   <input
                     type="password"
                     name="password"
                     value={formData.password}
                     onChange={handleInputChange}
-                    className="admin-form-input"
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition"
                     required={!editingUser}
                     placeholder={editingUser ? "Để trống nếu không muốn thay đổi" : ""}
                   />
                 </div>
                 
-                <div className="admin-form-group">
-                  <label className="admin-form-label">Họ tên:</label>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Họ tên:</label>
                   <input
                     type="text"
                     name="full_name"
                     value={formData.full_name}
                     onChange={handleInputChange}
-                    className="admin-form-input"
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition"
                     required
                   />
                 </div>
                 
-                <div className="admin-form-group">
-                  <label className="admin-form-label">Email:</label>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email:</label>
                   <input
                     type="email"
                     name="email"
                     value={formData.email}
                     onChange={handleInputChange}
-                    className="admin-form-input"
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition"
                     required
                   />
                 </div>
                 
-                <div className="admin-form-group">
-                  <label className="admin-form-label">Số điện thoại:</label>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Số điện thoại:</label>
                   <input
                     type="text"
                     name="phone"
                     value={formData.phone}
                     onChange={handleInputChange}
-                    className="admin-form-input"
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition"
                   />
                 </div>
                 
-                <div className="admin-form-group">
-                  <label className="admin-form-label">Vai trò:</label>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Vai trò:</label>
                   <select
                     name="role_id"
                     value={formData.role_id}
                     onChange={handleInputChange}
-                    className="admin-form-select"
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition"
                     required
                   >
                     <option value="">-- Chọn vai trò --</option>
@@ -540,19 +539,20 @@ const UsersPage = () => {
                   </select>
                 </div>
                 
-                <div className="admin-checkbox-group">
+                <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
                     name="is_active"
                     checked={formData.is_active}
                     onChange={handleInputChange}
-                    className="admin-checkbox"
+                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
                   />
-                  <label className="admin-form-label">Kích hoạt</label>
+                  <label className="text-sm font-medium text-gray-700">Kích hoạt</label>
                 </div>
               </form>
             </div>
-            <div className="admin-modal-footer">
+            
+            <div className="p-6 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
               <button
                 type="button"
                 onClick={() => {
@@ -560,14 +560,14 @@ const UsersPage = () => {
                   setEditingUser(null);
                   resetForm();
                 }}
-                className="admin-btn-cancel"
+                className="px-5 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-medium transition"
               >
                 Hủy
               </button>
               <button
                 type="submit"
                 onClick={handleSubmit}
-                className="admin-btn-submit"
+                className="px-5 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-lg font-medium shadow-md hover:shadow-lg transition"
               >
                 {editingUser ? 'Cập nhật' : 'Tạo mới'}
               </button>

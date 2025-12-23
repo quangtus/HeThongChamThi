@@ -5,7 +5,7 @@ export const userApi = {
   // Lấy danh sách users với phân trang và tìm kiếm
   getUsers: async (params = {}) => {
     try {
-      const response = await axios.get('/api/users', { params });
+      const response = await axios.get('/users', { params });
       return response.data;
     } catch (error) {
       throw error.response?.data || error;
@@ -15,7 +15,7 @@ export const userApi = {
   // Lấy thông tin user theo ID
   getUserById: async (id) => {
     try {
-      const response = await axios.get(`/api/users/${id}`);
+      const response = await axios.get(`/users/${id}`);
       return response.data;
     } catch (error) {
       throw error.response?.data || error;
@@ -25,7 +25,7 @@ export const userApi = {
   // Tạo user mới
   createUser: async (userData) => {
     try {
-      const response = await axios.post('/api/users', userData);
+      const response = await axios.post('/users', userData);
       return response.data;
     } catch (error) {
       throw error.response?.data || error;
@@ -35,7 +35,7 @@ export const userApi = {
   // Cập nhật user
   updateUser: async (id, userData) => {
     try {
-      const response = await axios.put(`/api/users/${id}`, userData);
+      const response = await axios.put(`/users/${id}`, userData);
       return response.data;
     } catch (error) {
       throw error.response?.data || error;
@@ -45,7 +45,7 @@ export const userApi = {
   // Xóa user (vô hiệu hóa)
   deleteUser: async (id) => {
     try {
-      const response = await axios.delete(`/api/users/${id}`);
+      const response = await axios.delete(`/users/${id}`);
       return response.data;
     } catch (error) {
       throw error.response?.data || error;
@@ -55,7 +55,7 @@ export const userApi = {
   // Lấy danh sách roles
   getRoles: async () => {
     try {
-      const response = await axios.get('/api/users/roles');
+      const response = await axios.get('/users/roles');
       return response.data;
     } catch (error) {
       throw error.response?.data || error;
@@ -65,7 +65,7 @@ export const userApi = {
   // Lấy thống kê users
   getUserStatistics: async () => {
     try {
-      const response = await axios.get('/api/users/statistics');
+      const response = await axios.get('/users/statistics');
       return response.data;
     } catch (error) {
       throw error.response?.data || error;

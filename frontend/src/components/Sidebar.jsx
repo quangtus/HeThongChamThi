@@ -25,14 +25,11 @@ const Sidebar = ({ user }) => {
   const examinerNavigation = [
     { name: 'Dashboard', href: '/dashboard', icon: '🏠' },
     { name: 'Chấm bài tự luận', href: '/examiner/grading', icon: '✍️' },
-    { name: 'Thống kê cá nhân', href: '/examiner/statistics', icon: '📊' },
   ];
 
   // Menu cho Candidate - Chỉ làm bài
   const candidateNavigation = [
     { name: 'Dashboard', href: '/dashboard', icon: '🏠' },
-    { name: 'Danh sách bài thi', href: '/candidate/exams', icon: '📝' },
-    { name: 'Kết quả của tôi', href: '/candidate/results', icon: '🏆' },
   ];
 
   // Chọn navigation dựa trên role

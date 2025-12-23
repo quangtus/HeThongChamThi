@@ -5,7 +5,7 @@ const { query } = require('../config/db');
  * Báo cáo và thống kê hệ thống
  */
 
-// Dashboard tổng quan
+// Dashboard tổng quan cho Admin
 async function getDashboardStats() {
     const stats = {};
 
@@ -50,7 +50,7 @@ async function getDashboardStats() {
     `);
     stats.exams = examStats[0];
 
-    // Thống kê chấm thi
+    // Thống kê chấm thi (QUAN TRỌNG - cho Dashboard Admin)
     const gradingStats = await query(`
         SELECT 
             (SELECT COUNT(*)::int FROM grading_assignments) as total_assignments,
@@ -60,6 +60,19 @@ async function getDashboardStats() {
             (SELECT COUNT(*)::int FROM grading_results) as total_results
     `);
     stats.grading = gradingStats[0];
+
+    // Tính tiến độ chấm thi tổng thể (%)
+    const totalAssignments = stats.grading.total_assignments || 0;
+    const completedAssignments = stats.grading.completed || 0;
+    stats.grading_progress = totalAssignments > 0 ?
+        Math.round((completedAssignments / totalAssignments) * 100) :
+        0;
+
+    // Đếm số khối chờ chấm, đang chấm, đã chấm
+    stats.pending_count = stats.grading.pending_assignments || 0;
+    stats.in_progress_count = stats.grading.in_progress || 0;
+    stats.graded_count = stats.grading.completed || 0;
+    stats.need_review_count = 0; // Cần xét duyệt (tùy logic)
 
     // Thống kê điểm cuối
     const scoreStats = await query(`
@@ -74,6 +87,140 @@ async function getDashboardStats() {
     stats.scores = scoreStats[0];
 
     return stats;
+}
+
+// Thống kê số khối bài đã chấm theo ngày/tuần (7 ngày gần nhất)
+async function getGradingByDay(options = {}) {
+    const { days = 7 } = options;
+
+    const sql = `
+        SELECT 
+            DATE(gr.graded_at) as date,
+            COUNT(*)::int as graded_count,
+            AVG(gr.score)::decimal(5,2) as avg_score
+        FROM grading_results gr
+        WHERE gr.graded_at >= CURRENT_DATE - INTERVAL '${days} days'
+        GROUP BY DATE(gr.graded_at)
+        ORDER BY date ASC
+    `;
+
+    const results = await query(sql);
+
+    // Điền đầy đủ các ngày thiếu
+    const filledData = [];
+    for (let i = days - 1; i >= 0; i--) {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        const dateStr = date.toISOString().split('T')[0];
+
+        const found = results.find(r => {
+            const rDate = new Date(r.date).toISOString().split('T')[0];
+            return rDate === dateStr;
+        });
+
+        filledData.push({
+            date: dateStr,
+            graded_count: found ? found.graded_count : 0,
+            avg_score: found ? parseFloat(found.avg_score) || 0 : 0
+        });
+    }
+
+    return filledData;
+}
+
+// Thống kê số khối bài đã chấm theo tuần (4 tuần gần nhất)
+async function getGradingByWeek(options = {}) {
+    const { weeks = 4 } = options;
+
+    const sql = `
+        SELECT 
+            DATE_TRUNC('week', gr.graded_at)::date as week_start,
+            COUNT(*)::int as graded_count,
+            AVG(gr.score)::decimal(5,2) as avg_score
+        FROM grading_results gr
+        WHERE gr.graded_at >= CURRENT_DATE - INTERVAL '${weeks} weeks'
+        GROUP BY DATE_TRUNC('week', gr.graded_at)
+        ORDER BY week_start ASC
+    `;
+
+    return await query(sql);
+}
+
+// Thống kê điểm trung bình theo giám khảo
+async function getAvgScoreByExaminer(options = {}) {
+    const { limit = 10 } = options;
+
+    const sql = `
+        SELECT 
+            e.examiner_id,
+            e.examiner_code,
+            u.full_name as examiner_name,
+            COUNT(gr.result_id)::int as total_graded,
+            AVG(gr.score)::decimal(5,2) as avg_score,
+            MIN(gr.score)::decimal(5,2) as min_score,
+            MAX(gr.score)::decimal(5,2) as max_score
+        FROM examiners e
+        JOIN users u ON e.user_id = u.user_id
+        LEFT JOIN grading_assignments ga ON e.examiner_id = ga.examiner_id
+        LEFT JOIN grading_results gr ON ga.assignment_id = gr.assignment_id
+        WHERE e.is_active = true AND gr.result_id IS NOT NULL
+        GROUP BY e.examiner_id, e.examiner_code, u.full_name
+        HAVING COUNT(gr.result_id) > 0
+        ORDER BY total_graded DESC
+        LIMIT $1
+    `;
+
+    return await query(sql, [limit]);
+}
+
+// Thống kê phân bố điểm tổng thể
+async function getScoreDistributionOverall() {
+    const sql = `
+        SELECT 
+            CASE 
+                WHEN total_score >= 9 THEN 'A (9-10)'
+                WHEN total_score >= 7 THEN 'B (7-8.9)'
+                WHEN total_score >= 5 THEN 'C (5-6.9)'
+                WHEN total_score >= 3 THEN 'D (3-4.9)'
+                ELSE 'F (0-2.9)'
+            END as grade_range,
+            COUNT(*)::int as count
+        FROM final_scores
+        GROUP BY grade_range
+        ORDER BY grade_range
+    `;
+
+    return await query(sql);
+}
+
+// Thống kê tiến độ chấm theo môn thi
+async function getGradingProgressBySubject() {
+    const sql = `
+        SELECT 
+            s.subject_id,
+            s.subject_code,
+            s.subject_name,
+            COUNT(DISTINCT ga.assignment_id)::int as total_assignments,
+            COUNT(DISTINCT ga.assignment_id) FILTER (WHERE ga.status = 'COMPLETED')::int as completed,
+            COUNT(DISTINCT ga.assignment_id) FILTER (WHERE ga.status = 'IN_PROGRESS')::int as in_progress,
+            COUNT(DISTINCT ga.assignment_id) FILTER (WHERE ga.status = 'ASSIGNED')::int as pending,
+            ROUND(
+                COUNT(DISTINCT ga.assignment_id) FILTER (WHERE ga.status = 'COMPLETED')::decimal / 
+                NULLIF(COUNT(DISTINCT ga.assignment_id), 0) * 100, 
+                2
+            ) as progress_percent
+        FROM subjects s
+        LEFT JOIN exam_essay ee ON s.subject_id = ee.subject_id
+        LEFT JOIN exam_papers ep ON ee.essay_id = ep.essay_id
+        LEFT JOIN exam_blocks eb ON ep.paper_code = eb.paper_code
+        LEFT JOIN grading_assignments ga ON eb.block_code = ga.block_code
+        WHERE s.is_active = true
+        GROUP BY s.subject_id, s.subject_code, s.subject_name
+        HAVING COUNT(DISTINCT ga.assignment_id) > 0
+        ORDER BY s.subject_name
+    `;
+
+    return await query(sql);
 }
 
 // Thống kê theo môn thi
@@ -412,5 +559,11 @@ module.exports = {
     getGradingComparison,
     getMismatchedGradings,
     getTimeBasedStats,
-    exportScoreReport
+    exportScoreReport,
+    // New functions for Admin Dashboard
+    getGradingByDay,
+    getGradingByWeek,
+    getAvgScoreByExaminer,
+    getScoreDistributionOverall,
+    getGradingProgressBySubject
 };
