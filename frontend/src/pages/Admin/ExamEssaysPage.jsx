@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { examEssayApi, subjectApi } from '../../api/adminApi';
 import uploadApi from '../../api/upload';
 import Alert from '../../components/ui/Alert';
+import EssayPrintPreview from '../../components/exam/EssayPrintPreview';
 import { validateExamEssayForm, validateEssayQuestionForm, prettyJSON, safeJSONParse } from '../../utils/formValidation';
 import '../../styles/admin.css';
 import '../../styles/admin.tw.css';
@@ -16,6 +17,8 @@ const ExamEssaysPage = () => {
   const [loading, setLoading] = useState(false);
   const [showExamModal, setShowExamModal] = useState(false);
   const [showQuestionModal, setShowQuestionModal] = useState(false);
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [printExam, setPrintExam] = useState(null);
   const [editingExam, setEditingExam] = useState(null);
   const [editingQuestion, setEditingQuestion] = useState(null);
   const [alert, setAlert] = useState({ show: false, type: 'error', message: '' });
@@ -30,7 +33,7 @@ const ExamEssaysPage = () => {
     subject_id: '',
     duration: '',
     total_score: '',
-    description: '',
+    instructions: '',
     is_active: true
   });
 
@@ -113,8 +116,12 @@ useEffect(() => {
       if (!response?.success || !response?.url) {
         throw new Error(response?.message || 'Upload thất bại');
       }
+      // Thêm timestamp vào URL để buộc trình duyệt tải ảnh mới, tránh cache
+      const urlWithTimestamp = response.url.includes('?') 
+        ? `${response.url}&_t=${Date.now()}` 
+        : `${response.url}?_t=${Date.now()}`;
       setCriteriaList(prev =>
-        prev.map((item, idx) => (idx === index ? { ...item, attachmentUrl: response.url } : item))
+        prev.map((item, idx) => (idx === index ? { ...item, attachmentUrl: urlWithTimestamp } : item))
       );
       setAlert({ show: true, type: 'success', message: 'Tải ảnh tiêu chí thành công!' });
     } catch (error) {
@@ -184,7 +191,7 @@ useEffect(() => {
       setLoading(true);
       const payload = {
         ...examFormData,
-        duration: parseInt(examFormData.duration),
+        time_limit: parseInt(examFormData.duration),
         total_score: parseFloat(examFormData.total_score),
         subject_id: parseInt(examFormData.subject_id)
       };
@@ -278,7 +285,7 @@ useEffect(() => {
         subject_id: exam.subject_id,
         duration: exam.time_limit || exam.duration,
         total_score: exam.total_score,
-        description: exam.description || '',
+        instructions: exam.instructions || '',
         is_active: exam.is_active
       });
     } else {
@@ -288,7 +295,7 @@ useEffect(() => {
         subject_id: '',
         duration: '',
         total_score: '',
-        description: '',
+        instructions: '',
         is_active: true
       });
     }
@@ -459,6 +466,9 @@ useEffect(() => {
                         <button className="btn-icon" onClick={() => handleViewQuestions(exam)} title="Xem câu hỏi">
                           📋
                         </button>
+                        <button className="btn-icon" onClick={() => { setPrintExam(exam); setShowPrintPreview(true); }} title="Xem/In đề thi">
+                          🖨️
+                        </button>
                         <button className="btn-icon" onClick={() => handleOpenExamModal(exam)} title="Sửa">
                           ✏️
                         </button>
@@ -605,11 +615,12 @@ useEffect(() => {
                 </div>
               </div>
               <div className="form-group">
-                <label>Mô tả</label>
+                <label>Hướng dẫn làm bài</label>
                 <textarea
-                  value={examFormData.description}
-                  onChange={(e) => setExamFormData({...examFormData, description: e.target.value})}
+                  value={examFormData.instructions}
+                  onChange={(e) => setExamFormData({...examFormData, instructions: e.target.value})}
                   rows="3"
+                  placeholder="Ví dụ: Thí sinh được sử dụng máy tính cầm tay, không được sử dụng tài liệu..."
                 />
               </div>
               <div className="modal-footer">
@@ -774,6 +785,14 @@ useEffect(() => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Modal xem trước & xuất PDF đề thi */}
+      {showPrintPreview && printExam && (
+        <EssayPrintPreview 
+          exam={printExam} 
+          onClose={() => { setShowPrintPreview(false); setPrintExam(null); }} 
+        />
       )}
     </div>
   );

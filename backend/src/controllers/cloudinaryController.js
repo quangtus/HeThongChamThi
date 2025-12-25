@@ -48,18 +48,22 @@ function uploadCriteriaImage(req, res) {
         }
 
         try {
-            const folder = req.body?.folder || process.env.CLOUDINARY_UPLOAD_FOLDER || 'grading/criteria';
-            const questionNo = req.body?.questionNo || 'general';
-            const criterionNo = req.body?.criterionNo || Date.now();
-            const publicIdBase = `criterion_q${questionNo}_${criterionNo}`;
+            // 
+            const body = req.body || {};
+            const folder = body.folder || process.env.CLOUDINARY_UPLOAD_FOLDER || 'grading/criteria';
+            const questionNo = body.questionNo || 'general';
+            const criterionNo = body.criterionNo || Date.now();
+            // Thêm timestamp để tạo unique public_id, tránh dùng ảnh cũ từ cache
+            const timestamp = Date.now();
+            const publicIdBase = `criterion_q${questionNo}_${criterionNo}_${timestamp}`;
 
             const uploadResult = await new Promise((resolve, reject) => {
-                const uploadStream = cloudinary.uploader.upload_stream(
-                    {
+                const uploadStream = cloudinary.uploader.upload_stream({
                         folder,
                         public_id: publicIdBase,
-                        overwrite: false,
+                        overwrite: true, // Cho phép ghi đè nếu trùng (dự phòng)
                         resource_type: 'image',
+                        invalidate: true, // Xóa cache CDN của Cloudinary
                         transformation: [{ quality: 'auto', fetch_format: 'auto' }]
                     },
                     (error, result) => {
@@ -96,4 +100,3 @@ function uploadCriteriaImage(req, res) {
 module.exports = {
     uploadCriteriaImage
 };
-

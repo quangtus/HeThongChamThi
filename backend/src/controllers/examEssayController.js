@@ -92,7 +92,7 @@ async function getExamEssayById(req, res) {
  */
 async function createExamEssay(req, res) {
     try {
-        const { exam_code, subject_id, duration, total_score, exam_date, description, created_by } = req.body;
+        const { exam_code, subject_id, duration, total_score, exam_date, instructions, created_by } = req.body;
 
         // Validation đầu vào cơ bản
         if (!exam_code || !subject_id || !duration || !total_score) {
@@ -122,7 +122,7 @@ async function createExamEssay(req, res) {
             total_questions: 0,
             total_score: parseFloat(total_score),
             time_limit: parseInt(duration),
-            instructions: description || null,
+            instructions: instructions || null,
             answer_sheet_template: null,
             created_by: parseInt(creatorId)
         };

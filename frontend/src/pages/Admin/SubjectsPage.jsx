@@ -277,11 +277,11 @@ const SubjectsPage = () => {
                   </td>
                   <td>
                     {subject.is_active ? (
-                      <span className="admin-badge-active flex items-center gap-1 inline-flex">
+                      <span className="admin-badge-active inline-flex items-center gap-1">
                         <span>✓</span> Hoạt động
                       </span>
                     ) : (
-                      <span className="admin-badge-inactive flex items-center gap-1 inline-flex">
+                      <span className="admin-badge-inactive inline-flex items-center gap-1">
                         <span>⊘</span> Ngừng
                       </span>
                     )}
